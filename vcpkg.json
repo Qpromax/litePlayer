@@ -1,0 +1,15 @@
+{
+  "name" : "liteplayer",
+  "version-string" : "1.0.0",
+  "builtin-baseline" : "e3ed41868d5034bc608eaaa58383cd6ecdbb5ffb",
+  "dependencies" : [ {
+    "name" : "ffmpeg",
+    "version>=" : "7.1.2#2"
+  }, {
+    "name" : "opengl",
+    "version>=" : "2022-12-04#3"
+  }, {
+    "name" : "sdl3",
+    "version>=" : "3.2.24#1"
+  } ]
+}
