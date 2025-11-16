@@ -1,7 +1,7 @@
 {
   "name" : "liteplayer",
   "version-string" : "1.0.0",
-  "builtin-baseline" : "e3ed41868d5034bc608eaaa58383cd6ecdbb5ffb",
+  "builtin-baseline" : "0804e3b55b7e435c593707071052363fa876f170",
   "dependencies" : [ {
     "name" : "ffmpeg",
     "version>=" : "7.1.2#2"
