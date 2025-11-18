@@ -12,6 +12,8 @@ extern "C" {
 #include <memory>
 #include <fstream>
 #include <sstream>
+#include <thread>
+#include <format>
 
 #include "liteP.h"
 
@@ -60,3 +62,41 @@ int main() {
 
     return 0;
 }
+
+
+// void dem(liteP::TSDeque<int>& pkg)
+// {
+//     for (int i = 0; i < 1000; ++i)
+//     {
+//         pkg.push(i);
+//         std::cout << "demux push " << i << std::endl;
+//     }
+//     pkg.close();
+// }
+//
+// void dec(liteP::TSDeque<int>& pkg, liteP::TSDeque<std::string>& frame)
+// {
+//     while (auto a = pkg.front_pop())
+//     {
+//         std::cout << "decode " << a.value() << std::endl;
+//         frame.push(std::format("pkg {}", a.value()-1000));
+//     }
+//     frame.close();
+// }
+//
+// void ren(liteP::TSDeque<std::string>& frame)
+// {
+//     while (auto a = frame.front_pop())
+//     {
+//         std::cout << a.value() << std::endl;
+//     }
+// }
+//
+// int main()
+// {
+//     liteP::TSDeque<int> pkg(100);
+//     liteP::TSDeque<std::string> frame(60);
+//     std::jthread demux(dem, std::ref(pkg));
+//     std::jthread decode(dec, std::ref(pkg), std::ref(frame));
+//     std::jthread render(ren, std::ref(frame));
+// }

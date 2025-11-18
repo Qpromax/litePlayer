@@ -17,6 +17,7 @@ namespace liteP {
         mutable std::mutex mtx;
         std::condition_variable cond;
         const size_t maxSize;
+        bool onOff = true;
     public:
         explicit TSDeque(size_t maxSize = 60) : maxSize(maxSize) {}
         ~TSDeque() = default;
@@ -34,10 +35,11 @@ namespace liteP {
             cond.notify_one();
         }
 
-        T front_pop()
+        std::optional<T> front_pop()
         {
             std::unique_lock<std::mutex> lock(mtx);
-            cond.wait(lock, [&]{ return !data.empty(); });
+            cond.wait(lock, [&]{ return !data.empty() || !onOff; });
+            if (data.empty()) return std::nullopt;
             T item = data.front();
             data.pop_front();
             cond.notify_one();
@@ -63,6 +65,18 @@ namespace liteP {
             std::lock_guard<std::mutex> lock(mtx);
             while (!data.empty()) data.pop();
             cond.notify_all();
+        }
+
+        void close()
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            onOff = false;
+        }
+
+        bool on_off() const
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            return onOff;
         }
     };
 
@@ -221,10 +235,97 @@ namespace liteP {
 
 
     //==================================================================================================================
+    class Demux {
+    private:
+        const char* path = nullptr;
+        AVFormatContext* fmtCtx = nullptr;
+        std::jthread thread;
+        TSDeque<AVPacket>& videoQueue;
+        TSDeque<AVPacket>& audioQueue;
+        int videoStreamIndex = -1;
+        int audioStreamIndex = -1;
+
+    public:
+        Demux(TSDeque<AVPacket>& vq, TSDeque<AVPacket>& aq, const char* path)
+            :videoQueue(vq), audioQueue(aq), path(path)
+        {
+
+        }
+        ~Demux()
+        {
+            stop();
+            avformat_close_input(&fmtCtx);
+        }
+
+        Demux(const Demux&) = delete;
+        Demux& operator=(const Demux&) = delete;
+        Demux(Demux&&) = delete;
+        Demux& operator=(Demux&&) = delete;
+
+        void init()
+        {
+            if (avformat_open_input(&fmtCtx, path, nullptr, nullptr) < 0)
+                throw std::runtime_error("Could not open file");
+
+            if (avformat_find_stream_info(fmtCtx, nullptr) < 0)
+                throw std::runtime_error("Could not find stream info");
+
+            for (int i = 0; i < fmtCtx->nb_streams; ++i)
+            {
+                if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+                    videoStreamIndex = i;
+                if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+                    audioStreamIndex = i;
+            }
+        }
+
+        void run()
+        {
+            thread = std::jthread([this](std::stop_token st){
+                task(st);
+            });
+        }
+
+        void stop()
+        {
+            if (thread.joinable())
+            {
+                videoQueue.close();
+                audioQueue.close();
+                thread.request_stop();
+                thread.join();
+            }
+        }
+        
+    private:
+        void task(std::stop_token st)
+        {
+            AVPacket pkt;
+            av_init_packet(&pkt);
+
+            while (!st.stop_requested())
+            {
+                int ret = av_read_frame(fmtCtx, &pkt);
+                if (ret < 0) break;
+
+                if (pkt.stream_index == videoStreamIndex) videoQueue.push(pkt);
+                else if (pkt.stream_index == audioStreamIndex) audioQueue.push(pkt);
+                else av_packet_unref(&pkt);
+            }
+            videoQueue.close();
+            audioQueue.close();
+        }
+    };
+
+
+
+
+    //==================================================================================================================
     class MP4 {
     private:
         const char* path = nullptr;
         AVFormatContext* fmt_ctx = nullptr;
+        // std::unique_ptr<AVFormatContext, decltype(&avformat_close_input)> fmt_ctx;
 
         int video_stream_index = -1;
         AVCodecContext* video_codec_ctx = nullptr;
