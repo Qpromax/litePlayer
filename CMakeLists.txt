@@ -10,7 +10,8 @@ find_package(SDL3 REQUIRED)
 include_directories(${SDL3_INCLUDE_DIRS})
 find_package(OpenGL REQUIRED)
 
-add_executable(litePlayer main.cpp)
+add_executable(litePlayer main.cpp
+        liteP.h)
 
 
 target_include_directories(litePlayer PRIVATE
