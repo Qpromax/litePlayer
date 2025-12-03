@@ -47,12 +47,12 @@ int main() {
     renderer.init(a.width, a.height, vertsrc.c_str(), fragsrc.c_str());
     liteP::TSDeque<AVFrame*> frame_queue;
     a.decode(frame_queue);
-    while (frame_queue.size() > 0)
+    while (auto opt = frame_queue.front_pop())
     {
-        AVFrame* frame = frame_queue.front_pop();
+        AVFrame* frame = *opt;
         renderer.renderFrame(frame);
-        SDL_GL_SwapWindow(window); // 刷新窗口
-        SDL_Delay(40); // 简单控制帧率 ~25fps
+        SDL_GL_SwapWindow(window);
+        SDL_Delay(40);
         av_frame_free(&frame);
     }
 

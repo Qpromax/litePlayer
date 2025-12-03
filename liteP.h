@@ -40,7 +40,7 @@ namespace liteP {
             std::unique_lock<std::mutex> lock(mtx);
             cond.wait(lock, [&]{ return !data.empty() || !onOff; });
             if (data.empty()) return std::nullopt;
-            T item = data.front();
+            std::optional<T> item = data.front();
             data.pop_front();
             cond.notify_one();
             return item;
@@ -296,7 +296,7 @@ namespace liteP {
                 thread.join();
             }
         }
-        
+
     private:
         void task(std::stop_token st)
         {
@@ -315,6 +315,24 @@ namespace liteP {
             videoQueue.close();
             audioQueue.close();
         }
+    };
+
+
+
+
+    //==================================================================================================================
+    class Decode {
+    private:
+    public:
+        Decode() = default;
+        ~Decode() = default;
+
+        Decode(const Decode&) = delete;
+        Decode& operator=(const Decode&) = delete;
+        Decode(Decode&&) = delete;
+        Decode& operator=(Decode&&) = delete;
+
+
     };
 
 
