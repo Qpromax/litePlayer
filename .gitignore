@@ -1,6 +1,8 @@
+.gitignore
 .DS_Store
 .git
 .idea
 build
 cmake-build-debug
-horizentalvideo.mp4
+example.mp4
+CMakeUserPresets.json

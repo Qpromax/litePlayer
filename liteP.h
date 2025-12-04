@@ -265,10 +265,10 @@ namespace liteP {
         void init()
         {
             if (avformat_open_input(&fmtCtx, path, nullptr, nullptr) < 0)
-                throw std::runtime_error("Could not open file");
+                throw std::runtime_error("Demux could not open file");
 
             if (avformat_find_stream_info(fmtCtx, nullptr) < 0)
-                throw std::runtime_error("Could not find stream info");
+                throw std::runtime_error("Demux could not find stream info");
 
             for (int i = 0; i < fmtCtx->nb_streams; ++i)
             {
@@ -385,12 +385,12 @@ namespace liteP {
             // open file
             if (avformat_open_input(&fmt_ctx, new_path, nullptr, nullptr) < 0)
             {
-                std::cerr << "Could not open file\n" << std::endl;
+                std::cerr << "MP4 could not open file\n" << std::endl;
                 return -1;
             }
             if (avformat_find_stream_info(fmt_ctx, nullptr) < 0)
             {
-                std::cerr << "Could not find stream info\n" << std::endl;
+                std::cerr << "MP4 could not find stream info\n" << std::endl;
                 return -2;
             }
 

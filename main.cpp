@@ -12,6 +12,7 @@ extern "C" {
 #include <memory>
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 #include <thread>
 #include <format>
 
@@ -31,6 +32,7 @@ std::string readFile(const char* path)
 }
 
 int main() {
+    // std::cout << std::filesystem::current_path() << std::endl;
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
@@ -40,10 +42,10 @@ int main() {
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
 
     liteP::MP4 a;
-    a.init("../horizentalvideo.mp4");
+    a.init("../../example.mp4");
     liteP::Renderer renderer;
-    std::string vertsrc = readFile("../shader/vertex.shader");
-    std::string fragsrc = readFile("../shader/fragment.shader");
+    std::string vertsrc = readFile("../../shader/vertex.shader");
+    std::string fragsrc = readFile("../../shader/fragment.shader");
     renderer.init(a.width, a.height, vertsrc.c_str(), fragsrc.c_str());
     liteP::TSDeque<AVFrame*> frame_queue;
     a.decode(frame_queue);
