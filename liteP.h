@@ -20,12 +20,6 @@ namespace liteP {
         bool onOff = true;
     public:
         explicit TSDeque(size_t maxSize = 60) : maxSize(maxSize) {}
-        ~TSDeque() = default;
-
-        TSDeque(const TSDeque&) = delete;
-        TSDeque& operator=(const TSDeque&) = delete;
-        TSDeque(TSDeque&&) = delete;
-        TSDeque& operator=(TSDeque&&) = delete;
 
         void push(T item)
         {
@@ -93,7 +87,6 @@ namespace liteP {
         GLuint VAO = 0, VBO = 0;
 
     public:
-        Renderer() = default;
         ~Renderer()
         {
             glDeleteTextures(3, textures);
@@ -101,11 +94,6 @@ namespace liteP {
             glDeleteBuffers(1, &VBO);
             glDeleteVertexArrays(1, &VAO);
         }
-
-        Renderer(const Renderer&) = delete;
-        Renderer& operator=(const Renderer&) = delete;
-        Renderer(Renderer&&) = delete;
-        Renderer& operator=(Renderer&&) = delete;
 
         // 初始化：纹理 + shader + 顶点数据
         bool init(int w, int h, const char* vertSrc, const char* fragSrc)
@@ -257,11 +245,6 @@ namespace liteP {
             avformat_close_input(&fmtCtx);
         }
 
-        Demux(const Demux&) = delete;
-        Demux& operator=(const Demux&) = delete;
-        Demux(Demux&&) = delete;
-        Demux& operator=(Demux&&) = delete;
-
         void init()
         {
             if (avformat_open_input(&fmtCtx, path, nullptr, nullptr) < 0)
@@ -324,14 +307,6 @@ namespace liteP {
     class Decode {
     private:
     public:
-        Decode() = default;
-        ~Decode() = default;
-
-        Decode(const Decode&) = delete;
-        Decode& operator=(const Decode&) = delete;
-        Decode(Decode&&) = delete;
-        Decode& operator=(Decode&&) = delete;
-
 
     };
 
@@ -356,7 +331,6 @@ namespace liteP {
         int height = 0;
         int width = 0;
 
-        MP4() = default;
         ~MP4()
         {
             // 关闭输入文件/流
@@ -374,11 +348,6 @@ namespace liteP {
                 avcodec_free_context(&audio_codec_ctx);
             }
         }
-
-        MP4(const MP4&) = delete;
-        MP4& operator=(const MP4&) = delete;
-        MP4(MP4&&) = delete;
-        MP4& operator=(MP4&&) = delete;
 
         int init(const char* new_path)
         {
