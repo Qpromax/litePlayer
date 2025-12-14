@@ -240,16 +240,16 @@ namespace liteP {
     //==================================================================================================================
     class Demux {
     private:
-        const char* path = nullptr;
         // AVFormatContext* fmtCtx = nullptr;
         std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)> fmtCtxPtr{
             nullptr,
             [](AVFormatContext* p){;
                     if (p) avformat_close_input(&p);
                 }};
-        std::jthread thread;
         TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& videoQueue;
         TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& audioQueue;
+        std::jthread thread;
+        const char* path = nullptr;
         int videoStreamIndex = -1;
         int audioStreamIndex = -1;
 
@@ -360,16 +360,14 @@ namespace liteP {
     //==================================================================================================================
     class MP4 {
     private:
-        const char* path = nullptr;
         AVFormatContext* fmt_ctx = nullptr;
         // std::unique_ptr<AVFormatContext, decltype(&avformat_close_input)> fmt_ctx;
-
-        int video_stream_index = -1;
         AVCodecContext* video_codec_ctx = nullptr;
-        AVPixelFormat pixel_format = AV_PIX_FMT_NONE;
-
-        int audio_stream_index = -1;
         AVCodecContext* audio_codec_ctx = nullptr;
+        AVPixelFormat pixel_format = AV_PIX_FMT_NONE;
+        const char* path = nullptr;
+        int video_stream_index = -1;
+        int audio_stream_index = -1;
 
     public:
         int height = 0;
