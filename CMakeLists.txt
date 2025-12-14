@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 4.0)
 project(litePlayer)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 26)
 
 find_package(ffmpeg)
 find_package(SDL3)

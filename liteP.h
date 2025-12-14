@@ -4,9 +4,22 @@
 
 #pragma once
 
+#include <cstdint>
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libswscale/swscale.h>
+#include <libavutil/imgutils.h>
+}
+
+#include "SDL3/SDL.h"
+#include "OpenGL/gl3.h"
+
 #include <deque>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
+#include <expected>
 
 namespace liteP {
     //==================================================================================================================
@@ -18,6 +31,7 @@ namespace liteP {
         std::condition_variable cond;
         const size_t maxSize;
         bool onOff = true;
+
     public:
         explicit TSDeque(size_t maxSize = 60) : maxSize(maxSize) {}
 
@@ -25,7 +39,8 @@ namespace liteP {
         {
             std::unique_lock<std::mutex> lock(mtx);
             cond.wait(lock, [&]{ return data.size() < maxSize; });
-            data.push_back(item);
+            // data.push_back(item);
+            data.emplace_back(std::move(item));
             cond.notify_one();
         }
 
@@ -226,38 +241,42 @@ namespace liteP {
     class Demux {
     private:
         const char* path = nullptr;
-        AVFormatContext* fmtCtx = nullptr;
+        // AVFormatContext* fmtCtx = nullptr;
+        std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)> fmtCtxPtr{
+            nullptr,
+            [](AVFormatContext* p){;
+                    if (p) avformat_close_input(&p);
+                }};
         std::jthread thread;
-        TSDeque<AVPacket>& videoQueue;
-        TSDeque<AVPacket>& audioQueue;
+        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& videoQueue;
+        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& audioQueue;
         int videoStreamIndex = -1;
         int audioStreamIndex = -1;
 
     public:
-        Demux(TSDeque<AVPacket>& vq, TSDeque<AVPacket>& aq, const char* path)
+        explicit Demux(TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& vq,
+            TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& aq,
+            const char* path)
             :videoQueue(vq), audioQueue(aq), path(path)
-        {
-
-        }
+        {}
         ~Demux()
         {
             stop();
-            avformat_close_input(&fmtCtx);
+            // avformat_close_input(&fmtCtx);
         }
 
         void init()
         {
-            if (avformat_open_input(&fmtCtx, path, nullptr, nullptr) < 0)
-                throw std::runtime_error("Demux could not open file");
+            fmtCtxPtr = open_input(path);
 
-            if (avformat_find_stream_info(fmtCtx, nullptr) < 0)
-                throw std::runtime_error("Demux could not find stream info");
+            if (avformat_find_stream_info(fmtCtxPtr.get(), nullptr) < 0)
+                std::cerr << "Demux could not find stream info";
 
-            for (int i = 0; i < fmtCtx->nb_streams; ++i)
+            for (int i = 0; i < fmtCtxPtr->nb_streams; ++i)
             {
-                if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+                if (fmtCtxPtr->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
                     videoStreamIndex = i;
-                if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+                if (fmtCtxPtr->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
                     audioStreamIndex = i;
             }
         }
@@ -265,7 +284,7 @@ namespace liteP {
         void run()
         {
             thread = std::jthread([this](std::stop_token st){
-                task(st);
+                task(std::move(st));
             });
         }
 
@@ -281,20 +300,45 @@ namespace liteP {
         }
 
     private:
+        std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)> open_input(const char* pt)
+        {
+            AVFormatContext* raw = avformat_alloc_context();
+            int ret = avformat_open_input(&raw, pt, nullptr, nullptr);
+            if (ret < 0)
+                return {nullptr,nullptr};
+            return {
+                raw,
+            [](AVFormatContext* p){;
+                    if (p) avformat_close_input(&p);
+                }};
+        }
+
         void task(std::stop_token st)
         {
-            AVPacket pkt;
-            av_init_packet(&pkt);
-
             while (!st.stop_requested())
             {
-                int ret = av_read_frame(fmtCtx, &pkt);
+                std::unique_ptr<AVPacket, void(*)(AVPacket*)> pktPtr(
+                    av_packet_alloc(),
+                    [](AVPacket* p) {
+                            if (p) av_packet_free(&p);
+                        });
+
+                if (!pktPtr) break;
+
+                int ret = av_read_frame(fmtCtxPtr.get(), pktPtr.get());
                 if (ret < 0) break;
 
-                if (pkt.stream_index == videoStreamIndex) videoQueue.push(pkt);
-                else if (pkt.stream_index == audioStreamIndex) audioQueue.push(pkt);
-                else av_packet_unref(&pkt);
+                if (pktPtr->stream_index == videoStreamIndex)
+                {
+                    videoQueue.push(std::move(pktPtr));
+                }
+                else if (pktPtr->stream_index == audioStreamIndex)
+                {
+                    audioQueue.push(std::move(pktPtr));
+                }
+                // 非视频音频包，忽略
             }
+
             videoQueue.close();
             audioQueue.close();
         }

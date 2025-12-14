@@ -22,7 +22,8 @@ extern "C" {
 std::string readFile(const char* path)
 {
     std::ifstream file(path);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         std::cerr << "Failed to open file: " << path << std::endl;
         return "";
     }
