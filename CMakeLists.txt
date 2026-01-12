@@ -8,7 +8,8 @@ find_package(SDL3)
 find_package(opengl_system)
 
 add_executable(litePlayer main.cpp
-        liteP.h)
+        liteP.h
+        EXCEPT.h)
 
 target_include_directories(litePlayer PRIVATE
         ${FFMPEG_INCLUDE_DIRS}

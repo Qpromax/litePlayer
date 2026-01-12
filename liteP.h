@@ -15,77 +15,108 @@ extern "C" {
 #include "SDL3/SDL.h"
 #include "OpenGL/gl3.h"
 
+#include <iostream>
 #include <deque>
+#include <thread>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
 #include <expected>
 
+// TODO:    consider c port
+// TODO:    consider concept
+// TODO:    consider module
 namespace liteP {
     //==================================================================================================================
     template<typename T>
     struct TSDeque {
     private:
-        std::deque<T> data;
-        mutable std::mutex mtx;
-        std::condition_variable cond;
-        const size_t maxSize;
-        bool onOff = true;
+        std::deque<T> data_;
+        mutable std::mutex mtx_;
+        std::condition_variable cond_;
+        const size_t max_size_;
+        bool on_off_ = true;
 
     public:
-        explicit TSDeque(size_t maxSize = 60) : maxSize(maxSize) {}
+        explicit TSDeque(size_t maxSize = 60) : max_size_(maxSize) {}
 
-        void push(T item)
+        // TODO:    consider forward
+        bool push(T item)
         {
-            std::unique_lock<std::mutex> lock(mtx);
-            cond.wait(lock, [&]{ return data.size() < maxSize; });
+            std::unique_lock<std::mutex> lock(mtx_);
+            cond_.wait(lock, [&]{ return data_.size() < max_size_ || !on_off_; });
+            if (!on_off_)
+            {
+                return false;
+            }
             // data.push_back(item);
-            data.emplace_back(std::move(item));
-            cond.notify_one();
+            data_.emplace_back(std::move(item));
+            cond_.notify_one();
+            return true;
         }
 
-        std::optional<T> front_pop()
+        // TODO:    consider non-optional/expected
+        // TODO:    consider move
+        auto front_pop() -> std::optional<T>
         {
-            std::unique_lock<std::mutex> lock(mtx);
-            cond.wait(lock, [&]{ return !data.empty() || !onOff; });
-            if (data.empty()) return std::nullopt;
-            std::optional<T> item = data.front();
-            data.pop_front();
-            cond.notify_one();
+            std::unique_lock<std::mutex> lock(mtx_);
+            cond_.wait(lock, [&]{ return !data_.empty() || !on_off_; });
+            if (data_.empty())
+            {
+                return std::nullopt;
+            }
+            std::optional<T> item = data_.front();
+            data_.pop_front();
+            cond_.notify_one();
             return item;
         }
 
-        T front_view()
+        // TODO:    consider optional/expected
+        auto front_view() const -> T
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            if (data.empty()) return T();
-            return data.front();
+            std::lock_guard<std::mutex> lock(mtx_);
+            if (data_.empty())
+            {
+                return T();
+            }
+            return data_.front();
         }
 
         size_t size() const
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            return data.size();
+            std::lock_guard<std::mutex> lock(mtx_);
+            return data_.size();
         }
 
-        // 仅弹出，自行处理释放
+        // NOTE:    only clear the queue, not free the ptrs
         void clear()
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            while (!data.empty()) data.pop();
-            cond.notify_all();
+            std::lock_guard<std::mutex> lock(mtx_);
+            while (!data_.empty())
+            {
+                // TODO: consider use custom pop
+                data_.pop_front();
+            }
+            cond_.notify_all();
         }
 
         void close()
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            onOff = false;
+            {
+                std::lock_guard<std::mutex> lock(mtx_);
+                if (!on_off_)
+                {
+                    return;
+                }
+                on_off_ = false;
+            }
+            cond_.notify_all();
         }
 
         bool on_off() const
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            return onOff;
+            std::lock_guard<std::mutex> lock(mtx_);
+            return on_off_;
         }
     };
 
@@ -93,6 +124,7 @@ namespace liteP {
 
 
     //==================================================================================================================
+    // TODO:   consider vulkan
     class Renderer {
     private:
         int width = 0;
@@ -241,23 +273,27 @@ namespace liteP {
     class Demux {
     private:
         // AVFormatContext* fmtCtx = nullptr;
-        std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)> fmtCtxPtr{
+        // TODO:    simplify deleter
+        std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)> fmt_ctx_ptr_{
             nullptr,
             [](AVFormatContext* p){;
-                    if (p) avformat_close_input(&p);
-                }};
-        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& videoQueue;
-        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& audioQueue;
-        std::jthread thread;
-        const char* path = nullptr;
-        int videoStreamIndex = -1;
-        int audioStreamIndex = -1;
+                if (p != nullptr)
+                {
+                    avformat_close_input(&p);
+                }
+            }};
+        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& video_queue_;
+        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& audio_queue_;
+        std::jthread thread_;
+        const char* path_ = nullptr;
+        int video_stream_index_ = -1;
+        int audio_stream_index_ = -1;
 
     public:
         explicit Demux(TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& vq,
-            TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& aq,
-            const char* path)
-            :videoQueue(vq), audioQueue(aq), path(path)
+                        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& aq,
+                        const char* path)
+            :video_queue_(vq), audio_queue_(aq), path_(path)
         {}
         ~Demux()
         {
@@ -267,49 +303,55 @@ namespace liteP {
 
         void init()
         {
-            fmtCtxPtr = open_input(path);
+            fmt_ctx_ptr_ = open_input(path_);
 
-            if (avformat_find_stream_info(fmtCtxPtr.get(), nullptr) < 0)
-                std::cerr << "Demux could not find stream info";
-
-            for (int i = 0; i < fmtCtxPtr->nb_streams; ++i)
+            if (avformat_find_stream_info(fmt_ctx_ptr_.get(), nullptr) < 0)
             {
-                if (fmtCtxPtr->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
-                    videoStreamIndex = i;
-                if (fmtCtxPtr->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-                    audioStreamIndex = i;
+                std::cerr << "Demux could not find stream info";
+            }
+
+            for (int i = 0; i < fmt_ctx_ptr_->nb_streams; ++i)
+            {
+                if (fmt_ctx_ptr_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+                    video_stream_index_ = i;
+                if (fmt_ctx_ptr_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+                    audio_stream_index_ = i;
             }
         }
 
         void run()
         {
-            thread = std::jthread([this](std::stop_token st){
+            thread_ = std::jthread([this](std::stop_token st){
                 task(std::move(st));
             });
         }
 
         void stop()
         {
-            if (thread.joinable())
+            if (thread_.joinable())
             {
-                videoQueue.close();
-                audioQueue.close();
-                thread.request_stop();
-                thread.join();
+                video_queue_.close();
+                audio_queue_.close();
+                thread_.request_stop();
+                thread_.join();
             }
         }
 
     private:
-        std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)> open_input(const char* pt)
+        auto open_input(const char* pt) -> std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)>
         {
             AVFormatContext* raw = avformat_alloc_context();
-            int ret = avformat_open_input(&raw, pt, nullptr, nullptr);
-            if (ret < 0)
+            if (const int ret = avformat_open_input(&raw, pt, nullptr, nullptr);ret < 0)
+            {
                 return {nullptr,nullptr};
+            }
             return {
                 raw,
-            [](AVFormatContext* p){;
-                    if (p) avformat_close_input(&p);
+                [](AVFormatContext* p){;
+                    if (p != nullptr)
+                    {
+                        avformat_close_input(&p);
+                    }
                 }};
         }
 
@@ -320,27 +362,36 @@ namespace liteP {
                 std::unique_ptr<AVPacket, void(*)(AVPacket*)> pktPtr(
                     av_packet_alloc(),
                     [](AVPacket* p) {
-                            if (p) av_packet_free(&p);
+                            if (p != nullptr)
+                            {
+                                av_packet_free(&p);
+                            }
                         });
 
-                if (!pktPtr) break;
-
-                int ret = av_read_frame(fmtCtxPtr.get(), pktPtr.get());
-                if (ret < 0) break;
-
-                if (pktPtr->stream_index == videoStreamIndex)
+                if (pktPtr == nullptr)
                 {
-                    videoQueue.push(std::move(pktPtr));
+                    break;
                 }
-                else if (pktPtr->stream_index == audioStreamIndex)
+
+                if (const int ret = av_read_frame(fmt_ctx_ptr_.get(), pktPtr.get());ret < 0)
                 {
-                    audioQueue.push(std::move(pktPtr));
+                    break;
                 }
-                // 非视频音频包，忽略
+
+                // TODO:    consider switch
+                if (pktPtr->stream_index == video_stream_index_)
+                {
+                    video_queue_.push(std::move(pktPtr));
+                }
+                else if (pktPtr->stream_index == audio_stream_index_)
+                {
+                    audio_queue_.push(std::move(pktPtr));
+                }
+                // ignore non-video/audio packets
             }
 
-            videoQueue.close();
-            audioQueue.close();
+            video_queue_.close();
+            audio_queue_.close();
         }
     };
 
@@ -350,7 +401,35 @@ namespace liteP {
     //==================================================================================================================
     class Decode {
     private:
+        // TODO:    simplify deleter
+        std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)> fmt_ctx_ptr_{
+            nullptr,
+            [](AVFormatContext* p){;
+                if (p != nullptr)
+                {
+                    avformat_close_input(&p);
+                }
+            }};
+        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& video_queue_;
+        std::jthread thread_;
+
     public:
+        explicit Decode(TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& vq)
+            : video_queue_(vq)
+        {}
+
+        // TODO
+        void init(){}
+
+        // TODO
+        void run(){}
+
+        // TODO
+        void stop(){}
+
+    private:
+        // TODO
+        void task(std::stop_token st){}
 
     };
 
@@ -360,14 +439,14 @@ namespace liteP {
     //==================================================================================================================
     class MP4 {
     private:
-        AVFormatContext* fmt_ctx = nullptr;
+        AVFormatContext* fmt_ctx_ = nullptr;
         // std::unique_ptr<AVFormatContext, decltype(&avformat_close_input)> fmt_ctx;
-        AVCodecContext* video_codec_ctx = nullptr;
-        AVCodecContext* audio_codec_ctx = nullptr;
-        AVPixelFormat pixel_format = AV_PIX_FMT_NONE;
-        const char* path = nullptr;
-        int video_stream_index = -1;
-        int audio_stream_index = -1;
+        AVCodecContext* video_codec_ctx_ = nullptr;
+        AVCodecContext* audio_codec_ctx_ = nullptr;
+        AVPixelFormat pixel_format_ = AV_PIX_FMT_NONE;
+        const char* path_ = nullptr;
+        int video_stream_index_ = -1;
+        int audio_stream_index_ = -1;
 
     public:
         int height = 0;
@@ -375,45 +454,43 @@ namespace liteP {
 
         ~MP4()
         {
-            // 关闭输入文件/流
-            if (fmt_ctx) {
-                avformat_close_input(&fmt_ctx);
+            // close input file/stream
+            if (fmt_ctx_) {
+                avformat_close_input(&fmt_ctx_);
             }
 
-            // 释放视频解码上下文
-            if (video_codec_ctx) {
-                avcodec_free_context(&video_codec_ctx);
+            // free video codec context
+            if (video_codec_ctx_) {
+                avcodec_free_context(&video_codec_ctx_);
             }
 
-            // 释放音频解码上下文
-            if (audio_codec_ctx) {
-                avcodec_free_context(&audio_codec_ctx);
+            // free audio codec context
+            if (audio_codec_ctx_) {
+                avcodec_free_context(&audio_codec_ctx_);
             }
         }
 
         int init(const char* new_path)
         {
-            // open file
-            if (avformat_open_input(&fmt_ctx, new_path, nullptr, nullptr) < 0)
+            if (avformat_open_input(&fmt_ctx_, new_path, nullptr, nullptr) < 0)
             {
                 std::cerr << "MP4 could not open file\n" << std::endl;
                 return -1;
             }
-            if (avformat_find_stream_info(fmt_ctx, nullptr) < 0)
+            if (avformat_find_stream_info(fmt_ctx_, nullptr) < 0)
             {
                 std::cerr << "MP4 could not find stream info\n" << std::endl;
                 return -2;
             }
 
-            // find video and audio stream
-            for (int i = 0; i < fmt_ctx->nb_streams; ++i)
+            for (int i = 0; i < fmt_ctx_->nb_streams; ++i)
             {
-                if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
-                    video_stream_index = fmt_ctx->streams[i]->index;
-                if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-                    audio_stream_index = fmt_ctx->streams[i]->index;
+                if (fmt_ctx_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+                    video_stream_index_ = fmt_ctx_->streams[i]->index;
+                if (fmt_ctx_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+                    audio_stream_index_ = fmt_ctx_->streams[i]->index;
             }
-            if (video_stream_index == -1)
+            if (video_stream_index_ == -1)
             {
                 std::cerr << "Could not find video stream\n" << std::endl;
                 return -3;
@@ -423,8 +500,8 @@ namespace liteP {
             // std::cerr << "Could not find audio stream\n" << std::endl;
             // return -3;
             // }
-            height = fmt_ctx->streams[video_stream_index]->codecpar->height;
-            width = fmt_ctx->streams[video_stream_index]->codecpar->width;
+            height = fmt_ctx_->streams[video_stream_index_]->codecpar->height;
+            width = fmt_ctx_->streams[video_stream_index_]->codecpar->width;
             return 0;
         }
 
@@ -471,7 +548,7 @@ namespace liteP {
         // }
         int decode(liteP::TSDeque<AVFrame*>& frame_queue)
         {
-            AVCodecParameters* codecpar = this->fmt_ctx->streams[video_stream_index]->codecpar;
+            AVCodecParameters* codecpar = this->fmt_ctx_->streams[video_stream_index_]->codecpar;
 
             // 查找解码器
             const AVCodec* codec = avcodec_find_decoder(codecpar->codec_id);
@@ -482,11 +559,11 @@ namespace liteP {
             }
 
             // 创建解码器上下文
-            this->video_codec_ctx = avcodec_alloc_context3(codec);
-            avcodec_parameters_to_context(this->video_codec_ctx, codecpar);
+            this->video_codec_ctx_ = avcodec_alloc_context3(codec);
+            avcodec_parameters_to_context(this->video_codec_ctx_, codecpar);
 
             // 打开解码器
-            if (avcodec_open2(this->video_codec_ctx, codec, nullptr) < 0)
+            if (avcodec_open2(this->video_codec_ctx_, codec, nullptr) < 0)
             {
                 std::cerr << "Could not open codec\n";
                 return -2;
@@ -495,24 +572,24 @@ namespace liteP {
             AVPacket* pkt = av_packet_alloc();
             AVFrame* frame = av_frame_alloc();
 
-            while (av_read_frame(this->fmt_ctx, pkt) >= 0)
+            while (av_read_frame(this->fmt_ctx_, pkt) >= 0)
             {
-                if (pkt->stream_index == this->video_stream_index)
+                if (pkt->stream_index == this->video_stream_index_)
                 {
-                    avcodec_send_packet(this->video_codec_ctx, pkt);
-                    while (avcodec_receive_frame(this->video_codec_ctx, frame) == 0)
+                    avcodec_send_packet(this->video_codec_ctx_, pkt);
+                    while (avcodec_receive_frame(this->video_codec_ctx_, frame) == 0)
                     {
-                        // 克隆一份帧数据，避免重复使用同一个 frame
+                        // NOTE:   here is copy
                         AVFrame* f = av_frame_clone(frame);
                         if (!f) {
                             std::cerr << "Failed to clone frame\n";
                             continue;
                         }
 
-                        // 推入队列
+                        // TODO:    consider move
                         frame_queue.push(f);
 
-                        // 打印 pts 方便调试
+                        //
                         std::cout << "Decoded frame pts: " << f->pts << std::endl;
                     }
                 }
