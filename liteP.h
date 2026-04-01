@@ -4,12 +4,12 @@
 
 #pragma once
 
-#include <cstdint>
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/error.h>
 }
 
 #include "SDL3/SDL.h"
@@ -21,12 +21,16 @@ extern "C" {
 #include <condition_variable>
 #include <mutex>
 #include <optional>
-#include <expected>
+#include <concepts>
+#include <utility>
+#include <string>
 
-// TODO:    consider c port
-// TODO:    consider concept
-// TODO:    consider module
+
+
 namespace liteP {
+
+
+
     //==================================================================================================================
     template<typename T>
     struct TSDeque {
@@ -35,96 +39,110 @@ namespace liteP {
         mutable std::mutex mtx_;
         std::condition_variable cond_;
         const size_t max_size_;
-        bool on_off_ = true;
+        bool is_running_ = true;
+
+        // todo: use circle queue
 
     public:
         explicit TSDeque(size_t maxSize = 60) : max_size_(maxSize) {}
 
-        // TODO:    consider forward
-        bool push(T item)
+        ~TSDeque() { close(); }
+
+
+        // todo: add push_batch()
+        template<typename Y>
+            requires std::constructible_from<T, Y&&>
+        bool push(Y&& item)
         {
             std::unique_lock<std::mutex> lock(mtx_);
-            cond_.wait(lock, [&]{ return data_.size() < max_size_ || !on_off_; });
-            if (!on_off_)
+            cond_.wait(lock, [&]{ return data_.size() < max_size_ || !is_running_; });
+            if (!is_running_)
             {
                 return false;
             }
-            // data.push_back(item);
-            data_.emplace_back(std::move(item));
+            data_.emplace_back(std::forward<Y>(item));
+            lock.unlock();
             cond_.notify_one();
             return true;
         }
 
-        // TODO:    consider non-optional/expected
-        // TODO:    consider move
-        auto front_pop() -> std::optional<T>
+
+
+        std::optional<T> pop_front()
         {
             std::unique_lock<std::mutex> lock(mtx_);
-            cond_.wait(lock, [&]{ return !data_.empty() || !on_off_; });
+            cond_.wait(lock, [&]{ return !data_.empty() || !is_running_; });
             if (data_.empty())
             {
                 return std::nullopt;
             }
-            std::optional<T> item = data_.front();
+            std::optional<T> item = (std::move(data_.front()));
             data_.pop_front();
+            lock.unlock();
             cond_.notify_one();
             return item;
         }
 
-        // TODO:    consider optional/expected
-        auto front_view() const -> T
-        {
-            std::lock_guard<std::mutex> lock(mtx_);
-            if (data_.empty())
-            {
-                return T();
-            }
-            return data_.front();
-        }
 
-        size_t size() const
+
+        // T front_view() const
+        // {
+        //     std::lock_guard<std::mutex> lock(mtx_);
+        //     if (data_.empty()) {
+        //         return T();
+        //     }
+        //     return data_.front();
+        // }
+
+
+
+        [[nodiscard]] size_t size() const
         {
             std::lock_guard<std::mutex> lock(mtx_);
             return data_.size();
         }
 
-        // NOTE:    only clear the queue, not free the ptrs
         void clear()
         {
-            std::lock_guard<std::mutex> lock(mtx_);
-            while (!data_.empty())
-            {
-                // TODO: consider use custom pop
+            std::unique_lock<std::mutex> lock(mtx_);
+            while (data_.empty() == false) {
                 data_.pop_front();
             }
+            lock.unlock();
             cond_.notify_all();
         }
+
+
 
         void close()
         {
+            // lock space
             {
                 std::lock_guard<std::mutex> lock(mtx_);
-                if (!on_off_)
-                {
+                if (is_running_ == false){
                     return;
                 }
-                on_off_ = false;
+                is_running_ = false;
             }
             cond_.notify_all();
         }
 
-        bool on_off() const
+
+
+        [[nodiscard]] bool is_running() const
         {
             std::lock_guard<std::mutex> lock(mtx_);
-            return on_off_;
+            return is_running_;
         }
+
+
+
     };
 
 
 
 
     //==================================================================================================================
-    // TODO:   consider vulkan
     class Renderer {
     private:
         int width = 0;
@@ -132,48 +150,80 @@ namespace liteP {
         GLuint textures[3] = {0,0,0};
         GLuint shaderProgram = 0;
         GLuint VAO = 0, VBO = 0;
+        GLint texYLoc_ = -1;
+        GLint texULoc_ = -1;
+        GLint texVLoc_ = -1;
+        bool init_ok_ = false;
 
     public:
-        ~Renderer()
+        explicit Renderer(int w, int h, const char* vertSrc, const char* fragSrc)
         {
-            glDeleteTextures(3, textures);
-            glDeleteProgram(shaderProgram);
-            glDeleteBuffers(1, &VBO);
-            glDeleteVertexArrays(1, &VAO);
+            init_ok_ = init(w, h, vertSrc, fragSrc);
         }
 
-        // 初始化：纹理 + shader + 顶点数据
+        ~Renderer()
+        {
+            cleanup();
+        }
+
+        [[nodiscard]] bool ok() const
+        {
+            return init_ok_;
+        }
+
+        void shutdown()
+        {
+            cleanup();
+        }
+
         bool init(int w, int h, const char* vertSrc, const char* fragSrc)
         {
+            init_ok_ = false;
+            cleanup();
+
             width = w;
             height = h;
 
-            // 创建 YUV 纹理
+            // YUV texture
             glGenTextures(3, textures);
             for (int i = 0; i < 3; ++i)
             {
+                glActiveTexture(GL_TEXTURE0 + i);
                 glBindTexture(GL_TEXTURE_2D, textures[i]);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-                if (i == 0) // Y plane
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
-                else // U / V plane
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width/2, height/2, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+                if (i == 0) {
+                    glTexImage2D(GL_TEXTURE_2D
+                                , 0
+                                , GL_RED
+                                , width, height
+                                , 0
+                                , GL_RED
+                                , GL_UNSIGNED_BYTE
+                                , nullptr);
+                } else {
+                    glTexImage2D(GL_TEXTURE_2D
+                                , 0
+                                , GL_RED
+                                , width / 2, height / 2
+                                , 0
+                                , GL_RED
+                                , GL_UNSIGNED_BYTE
+                                , nullptr);
+                }
             }
 
-            // 编译 shader
             shaderProgram = compileShader(vertSrc, fragSrc);
             if (shaderProgram == 0) return false;
 
-            // 顶点数据（屏幕四边形）
             float vertices[] = {
                 // pos       // tex
-                -1.0f,  1.0f, 0.0f,  0.0f, 1.0f,
-                -1.0f, -1.0f, 0.0f,  0.0f, 0.0f,
-                 1.0f,  1.0f, 0.0f,  1.0f, 1.0f,
-                 1.0f, -1.0f, 0.0f,  1.0f, 0.0f
+                -1.0f,  1.0f, 0.0f,  0.0f, 0.0f,
+                -1.0f, -1.0f, 0.0f,  0.0f, 1.0f,
+                 1.0f,  1.0f, 0.0f,  1.0f, 0.0f,
+                 1.0f, -1.0f, 0.0f,  1.0f, 1.0f
             };
 
             glGenVertexArrays(1, &VAO);
@@ -182,48 +232,89 @@ namespace liteP {
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
             glEnableVertexAttribArray(0);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+            glVertexAttribPointer(0, 3
+                                 , GL_FLOAT
+                                 , GL_FALSE
+                                 , 5 * sizeof(float)
+                                 , nullptr);
             glEnableVertexAttribArray(1);
-            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+            glVertexAttribPointer(1, 2
+                                 , GL_FLOAT
+                                 , GL_FALSE
+                                 , 5 * sizeof(float)
+                                 , (void*)(3 * sizeof(float)));
             glBindVertexArray(0);
 
+            // fix sampler binding
+            glUseProgram(shaderProgram);
+            texYLoc_ = glGetUniformLocation(shaderProgram, "texY");
+            texULoc_ = glGetUniformLocation(shaderProgram, "texU");
+            texVLoc_ = glGetUniformLocation(shaderProgram, "texV");
+            if (texYLoc_ >= 0) glUniform1i(texYLoc_, 0);
+            if (texULoc_ >= 0) glUniform1i(texULoc_, 1);
+            if (texVLoc_ >= 0) glUniform1i(texVLoc_, 2);
+
+            init_ok_ = true;
             return true;
         }
 
-        // 渲染一帧
         void renderFrame(AVFrame* frame)
         {
             if (!frame) return;
 
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-            // 更新纹理数据
+            // FFmpeg 帧可能带有 stride（linesize），按行长度上传更稳妥
+            glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, textures[0]);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, frame->linesize[0]);
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
                             GL_RED, GL_UNSIGNED_BYTE, frame->data[0]);
 
+            glActiveTexture(GL_TEXTURE1);
             glBindTexture(GL_TEXTURE_2D, textures[1]);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width/2, height/2,
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, frame->linesize[1]);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width / 2, height / 2,
                             GL_RED, GL_UNSIGNED_BYTE, frame->data[1]);
 
+            glActiveTexture(GL_TEXTURE2);
             glBindTexture(GL_TEXTURE_2D, textures[2]);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width/2, height/2,
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, frame->linesize[2]);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width / 2, height / 2,
                             GL_RED, GL_UNSIGNED_BYTE, frame->data[2]);
 
-            // 使用 shader
-            glUseProgram(shaderProgram);
-            // 绑定纹理单元
-            glUniform1i(glGetUniformLocation(shaderProgram, "texY"), 0);
-            glUniform1i(glGetUniformLocation(shaderProgram, "texU"), 1);
-            glUniform1i(glGetUniformLocation(shaderProgram, "texV"), 2);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
-            // 绘制四边形
+            glUseProgram(shaderProgram);
             glBindVertexArray(VAO);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
             glBindVertexArray(0);
         }
 
     private:
+        void cleanup()
+        {
+            if (SDL_GL_GetCurrentContext() == nullptr) {
+                return;
+            }
+            if (textures[0] || textures[1] || textures[2]) {
+                glDeleteTextures(3, textures);
+                textures[0] = textures[1] = textures[2] = 0;
+            }
+            if (shaderProgram != 0) {
+                glDeleteProgram(shaderProgram);
+                shaderProgram = 0;
+            }
+            if (VBO != 0) {
+                glDeleteBuffers(1, &VBO);
+                VBO = 0;
+            }
+            if (VAO != 0) {
+                glDeleteVertexArrays(1, &VAO);
+                VAO = 0;
+            }
+        }
+
         GLuint compileShader(const char* vertSrc, const char* fragSrc)
         {
             auto compile = [](GLenum type, const char* src) -> GLuint {
@@ -272,64 +363,127 @@ namespace liteP {
     //==================================================================================================================
     class Demux {
     private:
+        using packet_ptr_t     = std::unique_ptr<AVPacket, void(*)(AVPacket*)>;
+        using format_ctx_ptr_t = std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)>;
+
+
+
         // AVFormatContext* fmtCtx = nullptr;
         // TODO:    simplify deleter
-        std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)> fmt_ctx_ptr_{
-            nullptr,
-            [](AVFormatContext* p){;
-                if (p != nullptr)
-                {
+        format_ctx_ptr_t format_ctx_ptr_{
+            nullptr
+            , [](AVFormatContext* p) {
+                if (p != nullptr) {
                     avformat_close_input(&p);
                 }
             }};
-        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& video_queue_;
-        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& audio_queue_;
+
+        TSDeque<packet_ptr_t>& video_queue_;
+        TSDeque<packet_ptr_t>& audio_queue_;
         std::jthread thread_;
-        const char* path_ = nullptr;
         int video_stream_index_ = -1;
         int audio_stream_index_ = -1;
+        bool ready_ = false;
+
+
 
     public:
-        explicit Demux(TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& vq,
-                        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& aq,
-                        const char* path)
-            :video_queue_(vq), audio_queue_(aq), path_(path)
-        {}
+        explicit Demux(TSDeque<packet_ptr_t>& vq
+                      ,TSDeque<packet_ptr_t>& aq
+                      ,const char* path)
+            : video_queue_(vq), audio_queue_(aq)
+        {
+            format_ctx_ptr_ = open_input(path);
+            if (format_ctx_ptr_ == nullptr) {
+                std::cerr << "Demux could not open input\n";
+                return;
+            }
+
+            if (avformat_find_stream_info(format_ctx_ptr_.get(), nullptr) < 0) {
+                std::cerr << "Demux could not find stream info\n";
+                return;
+            }
+
+            video_stream_index_ = av_find_best_stream(
+                format_ctx_ptr_.get(), AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+            audio_stream_index_ = av_find_best_stream(
+                format_ctx_ptr_.get(), AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+
+            if (video_stream_index_ < 0) {
+                std::cerr << "Demux could not find video stream\n";
+                return;
+            }
+
+            ready_ = true;
+        }
+
         ~Demux()
         {
             stop();
             // avformat_close_input(&fmtCtx);
         }
 
-        void init()
+        [[nodiscard]] bool ready() const
         {
-            fmt_ctx_ptr_ = open_input(path_);
-
-            if (avformat_find_stream_info(fmt_ctx_ptr_.get(), nullptr) < 0)
-            {
-                std::cerr << "Demux could not find stream info";
-            }
-
-            for (int i = 0; i < fmt_ctx_ptr_->nb_streams; ++i)
-            {
-                if (fmt_ctx_ptr_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
-                    video_stream_index_ = i;
-                if (fmt_ctx_ptr_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-                    audio_stream_index_ = i;
-            }
+            return ready_;
         }
+
+
+
+        [[nodiscard]] const AVCodecParameters* video_codecpar() const
+        {
+            if (!ready_ || !format_ctx_ptr_ || video_stream_index_ < 0) {
+                return nullptr;
+            }
+            return format_ctx_ptr_->streams[video_stream_index_]->codecpar;
+        }
+
+
+
+        [[nodiscard]] std::pair<int, int> video_size() const
+        {
+            const AVCodecParameters* cp = video_codecpar();
+            if (cp == nullptr) {
+                return {0, 0};
+            }
+            return {cp->width, cp->height};
+        }
+
+
+
+        [[nodiscard]] AVRational video_time_base() const
+        {
+            if (!format_ctx_ptr_ || video_stream_index_ < 0) {
+                return AVRational{0, 1};
+            }
+            return format_ctx_ptr_->streams[video_stream_index_]->time_base;
+        }
+
+
 
         void run()
         {
-            thread_ = std::jthread([this](std::stop_token st){
-                task(std::move(st));
+            if (ready_ == false || format_ctx_ptr_ == nullptr || video_stream_index_ < 0) {
+                video_queue_.close();
+                audio_queue_.close();
+                std::cerr << "Decode not ready, run() skipped, queue closed\n";
+                return;
+            }
+            if (thread_.joinable()) {
+                std::cerr << "Demux already running, run() skipped\n";
+                return;
+            }
+            thread_ = std::jthread([this](const std::stop_token& st) {
+                task(st);
             });
         }
 
+
+
+
         void stop()
         {
-            if (thread_.joinable())
-            {
+            if (thread_.joinable()) {
                 video_queue_.close();
                 audio_queue_.close();
                 thread_.request_stop();
@@ -337,62 +491,74 @@ namespace liteP {
             }
         }
 
+
+
     private:
-        auto open_input(const char* pt) -> std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)>
+        [[nodiscard]] static format_ctx_ptr_t open_input(const char* pt)
         {
             AVFormatContext* raw = avformat_alloc_context();
-            if (const int ret = avformat_open_input(&raw, pt, nullptr, nullptr);ret < 0)
-            {
-                return {nullptr,nullptr};
+            const int ret = avformat_open_input(&raw, pt, nullptr, nullptr);
+            if (ret < 0) {
+                return {nullptr, [](AVFormatContext* p) {
+                    if (p != nullptr) {
+                        avformat_close_input(&p);
+                    }
+                }};
             }
             return {
                 raw,
-                [](AVFormatContext* p){;
-                    if (p != nullptr)
-                    {
+                [](AVFormatContext* p) {
+                    if (p != nullptr) {
                         avformat_close_input(&p);
                     }
                 }};
         }
 
-        void task(std::stop_token st)
-        {
-            while (!st.stop_requested())
-            {
-                std::unique_ptr<AVPacket, void(*)(AVPacket*)> pktPtr(
-                    av_packet_alloc(),
-                    [](AVPacket* p) {
-                            if (p != nullptr)
-                            {
-                                av_packet_free(&p);
-                            }
-                        });
 
-                if (pktPtr == nullptr)
-                {
+
+        void task(const std::stop_token& st)
+        {
+            while (st.stop_requested() == false)
+            {
+                packet_ptr_t pkt_ptr(
+                    av_packet_alloc()
+                    ,[](AVPacket* p) {
+                        if (p != nullptr) {
+                            av_packet_free(&p);
+                        }
+                    });
+
+                if (pkt_ptr == nullptr) {
                     break;
                 }
 
-                if (const int ret = av_read_frame(fmt_ctx_ptr_.get(), pktPtr.get());ret < 0)
-                {
+                const int ret = av_read_frame(format_ctx_ptr_.get(), pkt_ptr.get());
+                if (ret < 0) {
                     break;
                 }
 
                 // TODO:    consider switch
-                if (pktPtr->stream_index == video_stream_index_)
-                {
-                    video_queue_.push(std::move(pktPtr));
+                bool pushed = true;
+                if (pkt_ptr->stream_index == video_stream_index_) {
+                    pushed = video_queue_.push(std::move(pkt_ptr));
+                } else if (pkt_ptr->stream_index == audio_stream_index_) {
+                    pushed = audio_queue_.push(std::move(pkt_ptr));
+                } else {
+                    continue;
+                    // ignore non-video/audio packets
                 }
-                else if (pktPtr->stream_index == audio_stream_index_)
-                {
-                    audio_queue_.push(std::move(pktPtr));
+
+                if (pushed == false){
+                    break; // downstream closed
                 }
-                // ignore non-video/audio packets
             }
 
             video_queue_.close();
             audio_queue_.close();
         }
+
+
+
     };
 
 
@@ -402,264 +568,183 @@ namespace liteP {
     class Decode {
     private:
         // TODO:    simplify deleter
-        std::unique_ptr<AVFormatContext, void(*)(AVFormatContext*)> fmt_ctx_ptr_{
-            nullptr,
-            [](AVFormatContext* p){;
+        using packet_ptr_t    = std::unique_ptr<AVPacket, void(*)(AVPacket*)>;
+        using frame_ptr_t     = std::unique_ptr<AVFrame, void(*)(AVFrame*)>;
+        using codec_ctx_ptr_t = std::unique_ptr<AVCodecContext, void(*)(AVCodecContext*)>;
+
+
+
+        codec_ctx_ptr_t codec_ctx_ptr_{
+            nullptr
+            , [](AVCodecContext* p){;
                 if (p != nullptr)
                 {
-                    avformat_close_input(&p);
+                    avcodec_free_context(&p);
                 }
             }};
-        TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& video_queue_;
+
+        TSDeque<packet_ptr_t>& packet_queue_;
+        TSDeque<frame_ptr_t>& frame_queue_;
         std::jthread thread_;
+        bool ready_ = false;
+
+
 
     public:
-        explicit Decode(TSDeque<std::unique_ptr<AVPacket, void(*)(AVPacket*)>>& vq)
-            : video_queue_(vq)
-        {}
-
-        // TODO
-        void init(){}
-
-        // TODO
-        void run(){}
-
-        // TODO
-        void stop(){}
-
-    private:
-        // TODO
-        void task(std::stop_token st){}
-
-    };
-
-
-
-
-    //==================================================================================================================
-    class MP4 {
-    private:
-        AVFormatContext* fmt_ctx_ = nullptr;
-        // std::unique_ptr<AVFormatContext, decltype(&avformat_close_input)> fmt_ctx;
-        AVCodecContext* video_codec_ctx_ = nullptr;
-        AVCodecContext* audio_codec_ctx_ = nullptr;
-        AVPixelFormat pixel_format_ = AV_PIX_FMT_NONE;
-        const char* path_ = nullptr;
-        int video_stream_index_ = -1;
-        int audio_stream_index_ = -1;
-
-    public:
-        int height = 0;
-        int width = 0;
-
-        ~MP4()
+        explicit Decode(TSDeque<packet_ptr_t>& pq
+                        , TSDeque<frame_ptr_t>& fq
+                        , const AVCodecParameters* codecpar)
+            : packet_queue_(pq), frame_queue_(fq)
         {
-            // close input file/stream
-            if (fmt_ctx_) {
-                avformat_close_input(&fmt_ctx_);
+            if (codecpar == nullptr) {
+                std::cerr << "Decode got null codec parameters\n";
+                return;
             }
 
-            // free video codec context
-            if (video_codec_ctx_) {
-                avcodec_free_context(&video_codec_ctx_);
-            }
-
-            // free audio codec context
-            if (audio_codec_ctx_) {
-                avcodec_free_context(&audio_codec_ctx_);
-            }
-        }
-
-        int init(const char* new_path)
-        {
-            if (avformat_open_input(&fmt_ctx_, new_path, nullptr, nullptr) < 0)
-            {
-                std::cerr << "MP4 could not open file\n" << std::endl;
-                return -1;
-            }
-            if (avformat_find_stream_info(fmt_ctx_, nullptr) < 0)
-            {
-                std::cerr << "MP4 could not find stream info\n" << std::endl;
-                return -2;
-            }
-
-            for (int i = 0; i < fmt_ctx_->nb_streams; ++i)
-            {
-                if (fmt_ctx_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
-                    video_stream_index_ = fmt_ctx_->streams[i]->index;
-                if (fmt_ctx_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-                    audio_stream_index_ = fmt_ctx_->streams[i]->index;
-            }
-            if (video_stream_index_ == -1)
-            {
-                std::cerr << "Could not find video stream\n" << std::endl;
-                return -3;
-            }
-            // if (audio_stream_index == -1)
-            // {
-            // std::cerr << "Could not find audio stream\n" << std::endl;
-            // return -3;
-            // }
-            height = fmt_ctx_->streams[video_stream_index_]->codecpar->height;
-            width = fmt_ctx_->streams[video_stream_index_]->codecpar->width;
-            return 0;
-        }
-
-        // int decode(FrameQueue& frame_queue)
-        // {
-        //     AVCodecParameters* codecpar = this->fmt_ctx->streams[video_stream_index]->codecpar;
-        //
-        //     // 查找解码器
-        //     const AVCodec* codec = avcodec_find_decoder(codecpar->codec_id);
-        //     if (!codec)
-        //     {
-        //         std::cerr << "Could not find codec\n";
-        //         return -1;
-        //     }
-        //
-        //     // 创建解码器上下文
-        //     this->video_codec_ctx = avcodec_alloc_context3(codec);
-        //     avcodec_parameters_to_context(this->video_codec_ctx, codecpar);
-        //
-        //     // 打开解码器
-        //     if (avcodec_open2(this->video_codec_ctx, codec, nullptr) < 0)
-        //     {
-        //         std::cerr << "Could not open codec\n";
-        //         return -2;
-        //     }
-        //
-        //     AVPacket* pkt = av_packet_alloc();
-        //     AVFrame* frame = av_frame_alloc();
-        //
-        //     while (av_read_frame(this->fmt_ctx, pkt) >= 0)
-        //     {
-        //         if (pkt->stream_index == this->video_stream_index)
-        //         {
-        //             // 视频解码
-        //             avcodec_send_packet(this->video_codec_ctx, pkt);
-        //             while (avcodec_receive_frame(this->video_codec_ctx, frame) == 0)
-        //             {
-        //                 frame_queue.push(frame);
-        //             }
-        //         }
-        //         av_packet_unref(pkt);
-        //     }
-        //     return 0;
-        // }
-        int decode(liteP::TSDeque<AVFrame*>& frame_queue)
-        {
-            AVCodecParameters* codecpar = this->fmt_ctx_->streams[video_stream_index_]->codecpar;
-
-            // 查找解码器
             const AVCodec* codec = avcodec_find_decoder(codecpar->codec_id);
-            if (!codec)
-            {
-                std::cerr << "Could not find codec\n";
-                return -1;
+            if (codec == nullptr){
+                std::cerr << "Decode could not find decoder\n";
+                return;
             }
 
-            // 创建解码器上下文
-            this->video_codec_ctx_ = avcodec_alloc_context3(codec);
-            avcodec_parameters_to_context(this->video_codec_ctx_, codecpar);
-
-            // 打开解码器
-            if (avcodec_open2(this->video_codec_ctx_, codec, nullptr) < 0)
-            {
-                std::cerr << "Could not open codec\n";
-                return -2;
+            codec_ctx_ptr_.reset(avcodec_alloc_context3(codec));
+            if (codec_ctx_ptr_ == nullptr){
+                std::cerr << "Decode could not allocate codec context\n";
+                return;
             }
 
-            AVPacket* pkt = av_packet_alloc();
-            AVFrame* frame = av_frame_alloc();
+            int ret = avcodec_parameters_to_context(codec_ctx_ptr_.get(), codecpar);
+            if (ret < 0){
+                std::cerr << "Decode failed to copy codec parameters to context\n";
+                return;
+            }
 
-            while (av_read_frame(this->fmt_ctx_, pkt) >= 0)
+            codec_ctx_ptr_->thread_count = 0;               // auto threads
+            codec_ctx_ptr_->thread_type = FF_THREAD_FRAME;  // frame parallel
+
+            ret = avcodec_open2(codec_ctx_ptr_.get(), codec, nullptr);
+            if (ret < 0){
+                std::cerr << "Decode could not open codec\n";
+                return;
+            }
+
+            ready_ = true;
+        }
+
+        ~Decode()
+        {
+            stop();
+        }
+
+
+
+        void run()
+        {
+            if (!ready_ || codec_ctx_ptr_ == nullptr) {
+                std::cerr << "Decode not ready, run() skipped\n";
+                return;
+            }
+            if (thread_.joinable()) {
+                std::cerr << "Demux already running, run() skipped\n";
+                return;
+            }
+            thread_ = std::jthread([this](const std::stop_token& st){
+                task(st);
+            });
+        }
+
+
+
+        void stop()
+        {
+            if (thread_.joinable())
             {
-                if (pkt->stream_index == this->video_stream_index_)
+                thread_.request_stop();
+                packet_queue_.close();
+                frame_queue_.close();
+                thread_.join();
+            }
+        }
+
+    private:
+        void task(const std::stop_token& st)
+        {
+            while (st.stop_requested() == false)
+            {
+                auto pkt_opt = packet_queue_.pop_front();
+                if (pkt_opt == std::nullopt) {
+                    break; // upstream closed
+                }
+
+                auto& pkt = *pkt_opt;
+
+                const int ret_send = avcodec_send_packet(codec_ctx_ptr_.get(), pkt.get());
+                if (ret_send < 0) {
+                    // bad packet or decoder state; skip this packet
+                    continue;
+                }
+
+                while (st.stop_requested() == false)
                 {
-                    avcodec_send_packet(this->video_codec_ctx_, pkt);
-                    while (avcodec_receive_frame(this->video_codec_ctx_, frame) == 0)
-                    {
-                        // NOTE:   here is copy
-                        AVFrame* f = av_frame_clone(frame);
-                        if (!f) {
-                            std::cerr << "Failed to clone frame\n";
-                            continue;
-                        }
+                    frame_ptr_t frame(
+                        av_frame_alloc()
+                        , [](AVFrame* f){ if (f != nullptr) av_frame_free(&f); }
+                    );
+                    if (frame == nullptr) {
+                        frame_queue_.close();
+                        return;
+                    }
 
-                        // TODO:    consider move
-                        frame_queue.push(f);
+                    const int ret_recv = avcodec_receive_frame(codec_ctx_ptr_.get(), frame.get());
 
-                        //
-                        std::cout << "Decoded frame pts: " << f->pts << std::endl;
+                    if (ret_recv == AVERROR(EAGAIN) || ret_recv == AVERROR_EOF) {
+                        break; // decoder drained
+                    }
+                    if (ret_recv < 0) {
+                        std::cerr << "Decode error for current packet\n";
+                        break;
+                    }
+
+                    if (frame_queue_.push(std::move(frame)) == false) {
+                        frame_queue_.close(); // downstream closed
+                        return;
                     }
                 }
-                av_packet_unref(pkt);
             }
 
-            av_frame_free(&frame);
-            av_packet_free(&pkt);
+            // flush delayed frames
+            avcodec_send_packet(codec_ctx_ptr_.get(), nullptr);
+            while (st.stop_requested() == false)
+            {
+                frame_ptr_t frame(
+                    av_frame_alloc()
+                    , [](AVFrame* f){ if (f != nullptr) av_frame_free(&f); }
+                );
+                if (frame == nullptr) {
+                    break;
+                }
 
-            return 0;
+                const int ret_recv = avcodec_receive_frame(codec_ctx_ptr_.get(), frame.get());
+                if (ret_recv == AVERROR(EAGAIN) || ret_recv == AVERROR_EOF) {
+                    break;
+                }
+                if (ret_recv < 0) {
+                    std::cerr << "Decode error for current packet\n";
+                    break;
+                }
+
+                if (frame_queue_.push(std::move(frame)) == false) {
+                    break;
+                }
+            }
+
+            frame_queue_.close();
         }
+
+
+
     };
 
-} // TSDeque
 
 
-
-// struct FrameQueue {
-// private:
-//     std::deque<AVFrame*> queue;
-//     mutable std::mutex mtx;
-//     std::condition_variable cond;
-//     const size_t max_size = 30; // 可调
-//
-// public:
-//     // 阻塞推入帧（生产者使用）
-//     void push(AVFrame* frame)
-//     {
-//         std::unique_lock<std::mutex> lock(mtx);
-//         cond.wait(lock, [&]{ return queue.size() < max_size; });
-//         queue.push_back(frame);
-//         cond.notify_one();
-//     }
-//
-//     // 阻塞弹出帧（消费者使用）
-//     AVFrame* pop()
-//     {
-//         std::unique_lock<std::mutex> lock(mtx);
-//         cond.wait(lock, [&]{ return !queue.empty(); });
-//         AVFrame* frame = queue.front();
-//         queue.pop_front();
-//         cond.notify_one();
-//         return frame;
-//     }
-//
-//     // 非阻塞获取顶部帧（渲染线程可用）
-//     AVFrame* peek_nowait() const
-//     {
-//         std::lock_guard<std::mutex> lock(mtx);
-//         if (queue.empty()) return nullptr;
-//         return queue.front();
-//     }
-//
-//     // 获取队列大小
-//     size_t size() const
-//     {
-//         std::lock_guard<std::mutex> lock(mtx);
-//         return queue.size();
-//     }
-//
-//     // 清空队列并释放帧
-//     void clear()
-//     {
-//         std::lock_guard<std::mutex> lock(mtx);
-//         while (!queue.empty())
-//         {
-//             AVFrame* f = queue.front();
-//             queue.pop_front();
-//             av_frame_free(&f);
-//         }
-//         cond.notify_all();
-//     }
-// };
+} // namespace liteP
