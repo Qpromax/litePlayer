@@ -37,6 +37,7 @@ winget install conan
 在项目根目录下执行：
 
 ```bash
+conan profile detect
 conan install --build=missing  // 下载预编译的依赖包, 若没有则从源码构建
 cmake --preset conan-release
 ```

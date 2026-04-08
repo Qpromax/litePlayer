@@ -3,8 +3,12 @@ from conan.tools.cmake import CMakeToolchain, cmake_layout
 
 class MyLibConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
-    requires = "ffmpeg/[>=8.0.0]", "sdl/[>=3.2.2]"
     generators = "CMakeDeps"
+
+    def requirements(self):
+        self.requires("ffmpeg/8.0.1")
+        self.requires("sdl/3.2.20")
+        self.requires("pulseaudio/17.0", override=True)
 
     def layout(self):
         cmake_layout(self)

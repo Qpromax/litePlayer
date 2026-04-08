@@ -38,6 +38,7 @@ winget install conan
 Run the following commands in the project root directory:
 
 ```bash
+conan profile detect
 conan install --build=missing   # Downloads pre-built dependencies, or builds from source if missing
 cmake --preset conan-release
 ```
