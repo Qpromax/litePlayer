@@ -40,6 +40,7 @@ winget install conan
 conan profile detect
 conan install --build=missing  // 下载预编译的依赖包, 若没有则从源码构建
 cmake --preset conan-release
+cmake --build --preset conan-release
 ```
 
 
