@@ -5,7 +5,8 @@ set(CMAKE_CXX_STANDARD 23)
 
 find_package(ffmpeg)
 find_package(SDL3)
-find_package(opengl_system)
+find_package(OpenGL REQUIRED)
+find_package(GLEW REQUIRED)
 
 add_executable(litePlayer main.cpp
         liteP.h
@@ -18,5 +19,6 @@ target_include_directories(litePlayer PRIVATE
 target_link_libraries(litePlayer PRIVATE
         ffmpeg::ffmpeg
         sdl::sdl
-        opengl::opengl
+        OpenGL::GL
+        GLEW::GLEW
 )

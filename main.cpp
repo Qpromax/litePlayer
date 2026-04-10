@@ -17,7 +17,7 @@ extern "C" {
 #include "liteP.h"
 
 using packet_ptr_t = std::unique_ptr<AVPacket, void(*)(AVPacket*)>;
-using frame_ptr_t = std::unique_ptr<AVFrame, void(*)(AVFrame*)>;
+using frame_ptr_t  = std::unique_ptr<AVFrame, void(*)(AVFrame*)>;
 
 std::string readFile(const char* path)
 {
@@ -37,7 +37,7 @@ int main()
 
     liteP::TSDeque<packet_ptr_t> video_packet_queue(120);
     liteP::TSDeque<packet_ptr_t> audio_packet_queue(120);
-    liteP::TSDeque<frame_ptr_t> video_frame_queue(60);
+    liteP::TSDeque<frame_ptr_t>  video_frame_queue(60);
 
     liteP::Demux demux(video_packet_queue, audio_packet_queue, media_path);
 
