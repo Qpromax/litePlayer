@@ -1,18 +1,7 @@
-extern "C" {
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
-#include <libavutil/avutil.h>
-}
-
-#include "SDL3/SDL.h"
-#include "OpenGL/gl3.h"
-
 #include <chrono>
 #include <fstream>
-#include <iostream>
 #include <memory>
 #include <sstream>
-#include <thread>
 
 #include "liteP.h"
 
@@ -31,9 +20,14 @@ std::string readFile(const char* path)
     return ss.str();
 }
 
-int main()
+int main(int argc, char* argv[])
 {
-    const char* media_path = "../../example.mp4";
+    const char* media_path = "invalid path";
+    if (argc > 1) {
+        media_path = argv[1];
+    }
+
+    std::println("{}", media_path);
 
     liteP::TSDeque<packet_ptr_t> video_packet_queue(120);
     liteP::TSDeque<packet_ptr_t> audio_packet_queue(120);
@@ -51,7 +45,7 @@ int main()
 
     liteP::Decode decode(video_packet_queue, video_frame_queue, video_codecpar);
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) == false) {
         std::cerr << "SDL_Init failed\n";
         return -2;
     }

@@ -10,6 +10,20 @@ class MyLibConan(ConanFile):
         self.requires("sdl/3.2.20")
         self.requires("pulseaudio/17.0", override=True)
 
+    def default_options(self):
+        options = {
+            "ffmpeg/*: disable_everything": True,
+        }
+        options.update({
+            "ffmpeg/*:avcodec": True,
+            "ffmpeg/*:avformat": True,
+            "ffmpeg/*:avutil": True,
+            "ffmpeg/*:swresample": True,
+            "ffmpeg/*:swscale": True,
+        })
+        return options
+
+
     def layout(self):
         cmake_layout(self)
 

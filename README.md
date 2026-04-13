@@ -60,5 +60,4 @@ cmake --build --preset conan-release
 │   └── Release/ 
 │       └── litePlayer 
 ├── main.cpp            // 源文件
-├── example.mp4         // 需替换为你自己的视频文件
 ```

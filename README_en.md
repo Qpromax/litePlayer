@@ -60,5 +60,4 @@ After a successful build, the executable is located under `build/Release`:
 │   └── Release/ 
 │       └── litePlayer 
 ├── main.cpp            # Source file
-├── example.mp4         # Replace with your own video file
 ```

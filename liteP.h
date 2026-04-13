@@ -7,15 +7,22 @@
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
-#include <libswscale/swscale.h>
-#include <libavutil/imgutils.h>
 #include <libavutil/error.h>
 }
 
-#include "SDL3/SDL.h"
-#include "OpenGL/gl3.h"
+#include <SDL3/SDL.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <GL/gl3.h>
+#elif defined(__APPLE__)
+#include <OpenGL/gl3.h>
+#else
+#include <GL/gl3.h>
+#endif
 
 #include <iostream>
+#include <print>
 #include <deque>
 #include <thread>
 #include <condition_variable>
