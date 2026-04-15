@@ -3,8 +3,8 @@ project(litePlayer)
 
 set(CMAKE_CXX_STANDARD 23)
 
-find_package(ffmpeg)
-find_package(SDL3)
+find_package(ffmpeg REQUIRED)
+find_package(SDL3 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 

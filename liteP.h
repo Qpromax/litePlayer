@@ -21,7 +21,6 @@ extern "C" {
 #include <GL/gl3.h>
 #endif
 
-#include <iostream>
 #include <print>
 #include <deque>
 #include <thread>
@@ -30,7 +29,6 @@ extern "C" {
 #include <optional>
 #include <concepts>
 #include <utility>
-#include <string>
 
 
 
@@ -333,7 +331,7 @@ namespace liteP {
                 if (!success) {
                     char info[512];
                     glGetShaderInfoLog(shader, 512, nullptr, info);
-                    std::cerr << "Shader compile error: " << info << std::endl;
+                    std::print(stderr, "Shader compile error: {}", info);
                     return 0;
                 }
                 return shader;
@@ -354,7 +352,7 @@ namespace liteP {
             {
                 char info[512];
                 glGetProgramInfoLog(program, 512, nullptr, info);
-                std::cerr << "Shader link error: " << info << std::endl;
+                std::print(stderr, "Shader link error: {}", info);
                 return 0;
             }
 
@@ -402,12 +400,12 @@ namespace liteP {
         {
             format_ctx_ptr_ = open_input(path);
             if (format_ctx_ptr_ == nullptr) {
-                std::cerr << "Demux could not open input\n";
+                std::print(stderr, "Demux could not open input\n");
                 return;
             }
 
             if (avformat_find_stream_info(format_ctx_ptr_.get(), nullptr) < 0) {
-                std::cerr << "Demux could not find stream info\n";
+                std::print(stderr, "Demux could not find stream info\n");
                 return;
             }
 
@@ -417,7 +415,7 @@ namespace liteP {
                 format_ctx_ptr_.get(), AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
 
             if (video_stream_index_ < 0) {
-                std::cerr << "Demux could not find video stream\n";
+                std::print(stderr, "Demux could not find video stream\n");
                 return;
             }
 
@@ -473,11 +471,11 @@ namespace liteP {
             if (ready_ == false || format_ctx_ptr_ == nullptr || video_stream_index_ < 0) {
                 video_queue_.close();
                 audio_queue_.close();
-                std::cerr << "Decode not ready, run() skipped, queue closed\n";
+                std::print(stderr, "Decode not ready, run() skipped, queue closed\n");
                 return;
             }
             if (thread_.joinable()) {
-                std::cerr << "Demux already running, run() skipped\n";
+                std::print(stderr, "Demux already running, run() skipped\n");
                 return;
             }
             thread_ = std::jthread([this](const std::stop_token& st) {
@@ -604,25 +602,25 @@ namespace liteP {
             : packet_queue_(pq), frame_queue_(fq)
         {
             if (codecpar == nullptr) {
-                std::cerr << "Decode got null codec parameters\n";
+                std::print(stderr, "Decode got null codec parameters\n");
                 return;
             }
 
             const AVCodec* codec = avcodec_find_decoder(codecpar->codec_id);
             if (codec == nullptr){
-                std::cerr << "Decode could not find decoder\n";
+                std::print(stderr, "Decode could not find decoder\n");
                 return;
             }
 
             codec_ctx_ptr_.reset(avcodec_alloc_context3(codec));
             if (codec_ctx_ptr_ == nullptr){
-                std::cerr << "Decode could not allocate codec context\n";
+                std::print(stderr, "Decode could not allocate codec context\n");
                 return;
             }
 
             int ret = avcodec_parameters_to_context(codec_ctx_ptr_.get(), codecpar);
             if (ret < 0){
-                std::cerr << "Decode failed to copy codec parameters to context\n";
+                std::print(stderr, "Decode failed to copy codec parameters to context\n");
                 return;
             }
 
@@ -631,7 +629,7 @@ namespace liteP {
 
             ret = avcodec_open2(codec_ctx_ptr_.get(), codec, nullptr);
             if (ret < 0){
-                std::cerr << "Decode could not open codec\n";
+                std::print(stderr, "Decode could not open codec\n");
                 return;
             }
 
@@ -648,11 +646,11 @@ namespace liteP {
         void run()
         {
             if (!ready_ || codec_ctx_ptr_ == nullptr) {
-                std::cerr << "Decode not ready, run() skipped\n";
+                std::print(stderr, "Decode not ready, run() skipped\n");
                 return;
             }
             if (thread_.joinable()) {
-                std::cerr << "Demux already running, run() skipped\n";
+                std::print(stderr, "Demux already running, run() skipped\n");
                 return;
             }
             thread_ = std::jthread([this](const std::stop_token& st){
@@ -708,7 +706,7 @@ namespace liteP {
                         break; // decoder drained
                     }
                     if (ret_recv < 0) {
-                        std::cerr << "Decode error for current packet\n";
+                        std::print(stderr, "Decode error for current packet\n");
                         break;
                     }
 
@@ -736,7 +734,7 @@ namespace liteP {
                     break;
                 }
                 if (ret_recv < 0) {
-                    std::cerr << "Decode error for current packet\n";
+                    std::print(stderr, "Decode error for current packet\n");
                     break;
                 }
 

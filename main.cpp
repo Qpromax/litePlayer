@@ -12,7 +12,7 @@ std::string readFile(const char* path)
 {
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "Failed to open file: " << path << std::endl;
+        std::print(stderr, "Failed to open file: {}", path);
         return "";
     }
     std::stringstream ss;
@@ -22,12 +22,12 @@ std::string readFile(const char* path)
 
 int main(int argc, char* argv[])
 {
-    const char* media_path = "invalid path";
+    const char* media_path = "../../example.mp4";
     if (argc > 1) {
         media_path = argv[1];
     }
 
-    std::println("{}", media_path);
+    std::print("{}\n", media_path);
 
     liteP::TSDeque<packet_ptr_t> video_packet_queue(120);
     liteP::TSDeque<packet_ptr_t> audio_packet_queue(120);
@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
 
     const AVCodecParameters* video_codecpar = demux.video_codecpar();
     if (video_codecpar == nullptr) {
-        std::cerr << "main: demux video codecpar is null\n";
+        std::print( stderr, "main: demux video codecpar is null\n");
         return -1;
     }
     const auto [video_w, video_h] = demux.video_size();
@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
     liteP::Decode decode(video_packet_queue, video_frame_queue, video_codecpar);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) == false) {
-        std::cerr << "SDL_Init failed\n";
+        std::print(stderr, "SDL_Init failed\n");
         return -2;
     }
 
@@ -60,14 +60,14 @@ int main(int argc, char* argv[])
         video_h > 0 ? video_h : 360,
         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     if (window == nullptr) {
-        std::cerr << "SDL_CreateWindow failed\n";
+        std::print(stderr, "SDL_CreateWindow failed\n");
         SDL_Quit();
         return -3;
     }
 
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
     if (!gl_context) {
-        std::cerr << "SDL_GL_CreateContext failed\n";
+        std::print(stderr, "SDL_GL_CreateContext failed\n");
         SDL_DestroyWindow(window);
         SDL_Quit();
         return -4;
@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
     std::string fragsrc = readFile("../../shader/fragment.shader");
     liteP::Renderer renderer(video_w, video_h, vertsrc.c_str(), fragsrc.c_str());
     if (!renderer.ok()) {
-        std::cerr << "renderer init failed\n";
+        std::print(stderr, "renderer init failed\n");
         SDL_GL_DestroyContext(gl_context);
         SDL_DestroyWindow(window);
         SDL_Quit();
