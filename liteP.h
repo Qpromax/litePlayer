@@ -10,16 +10,7 @@ extern "C" {
 #include <libavutil/error.h>
 }
 
-#include <SDL3/SDL.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#include <GL/gl3.h>
-#elif defined(__APPLE__)
-#include <OpenGL/gl3.h>
-#else
-#include <GL/gl3.h>
-#endif
+#include <glad/glad.h>
 
 #include <print>
 #include <deque>
@@ -224,11 +215,11 @@ namespace liteP {
             if (shaderProgram == 0) return false;
 
             float vertices[] = {
-                // pos       // tex
-                -1.0f,  1.0f, 0.0f,  0.0f, 0.0f,
-                -1.0f, -1.0f, 0.0f,  0.0f, 1.0f,
-                 1.0f,  1.0f, 0.0f,  1.0f, 0.0f,
-                 1.0f, -1.0f, 0.0f,  1.0f, 1.0f
+                // pos      // tex
+                -1.0f,  1.0f, 0.0f, 0.0f,
+                -1.0f, -1.0f, 0.0f, 1.0f,
+                 1.0f,  1.0f, 1.0f, 0.0f,
+                 1.0f, -1.0f, 1.0f, 1.0f
             };
 
             glGenVertexArrays(1, &VAO);
@@ -237,17 +228,17 @@ namespace liteP {
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
             glEnableVertexAttribArray(0);
-            glVertexAttribPointer(0, 3
+            glVertexAttribPointer(0, 2
                                  , GL_FLOAT
                                  , GL_FALSE
-                                 , 5 * sizeof(float)
+                                 , 4 * sizeof(float)
                                  , nullptr);
             glEnableVertexAttribArray(1);
             glVertexAttribPointer(1, 2
                                  , GL_FLOAT
                                  , GL_FALSE
-                                 , 5 * sizeof(float)
-                                 , (void*)(3 * sizeof(float)));
+                                 , 4 * sizeof(float)
+                                 , (void*)(2 * sizeof(float)));
             glBindVertexArray(0);
 
             // fix sampler binding
@@ -299,9 +290,6 @@ namespace liteP {
     private:
         void cleanup()
         {
-            if (SDL_GL_GetCurrentContext() == nullptr) {
-                return;
-            }
             if (textures[0] || textures[1] || textures[2]) {
                 glDeleteTextures(3, textures);
                 textures[0] = textures[1] = textures[2] = 0;
@@ -320,7 +308,7 @@ namespace liteP {
             }
         }
 
-        GLuint compileShader(const char* vertSrc, const char* fragSrc)
+        static GLuint compileShader(const char* vertSrc, const char* fragSrc)
         {
             auto compile = [](GLenum type, const char* src) -> GLuint {
                 GLuint shader = glCreateShader(type);

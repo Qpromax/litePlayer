@@ -1,36 +1,30 @@
 English | [中文](README.md)
 # litePlayer
 
-A modern C++ lightweight media player built with C++20, CMake, and Conan.
+A modern C++ lightweight media player built with C++23 and xmake.
 
 ## Requirements
 
-- C++20 compatible compiler (e.g., GCC 11+, Clang 14+, MSVC 2022+)
-- CMake 3.20 or higher
-- Conan 2.0 or higher
+- C++23 compatible compiler (e.g., GCC 13+, Clang 16+, MSVC 2022+)
+- xmake (2.8+)
 
 ## Quick Start
 
-### 1. Install Conan
+### 1. Install xmake
 
-Using pip:
+macOS (Homebrew):
 ```bash
-pip install conan
+brew install xmake
 ```
 
-Linux (apt):
+Linux:
 ```bash
-sudo apt install conan
+curl -fsSL https://xmake.io/shget.text | bash
 ```
 
-macOS:
+Windows (PowerShell):
 ```bash
-pip install conan
-```
-
-Windows:
-```bash
-winget install conan
+irm https://xmake.io/psget.text | iex
 ```
 
 ### 2. Build the Project
@@ -38,26 +32,27 @@ winget install conan
 Run the following commands in the project root directory:
 
 ```bash
-conan profile detect
-conan install --build=missing   # Downloads pre-built dependencies, or builds from source if missing
-cmake --preset conan-release
-cmake --build --preset conan-release
+xmake f -m release
+xmake
 ```
 
-### 3. Executable
+### 3. Generate clangd config (optional)
 
-After a successful build, the executable is located under `build/Release`:
+If clangd shows false diagnostics or missing headers, run:
 
 ```bash
-./build/Release/litePlayer
+xmake project -k compile_commands
 ```
 
-## Project Structure
+This generates `compile_commands.json` in the project root for proper clangd indexing.
+
+### 4. Project Structure
 
 ```
 .
-├── build/              # Build output directory
-│   └── Release/ 
-│       └── litePlayer 
+├── build/                      # Build output directory
+│   └── <plat>/<arch>/release/
+│                     └── litePlayer
+├── compile_commands.json       # clangd index config (optional)
 ├── main.cpp            # Source file
 ```

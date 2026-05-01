@@ -3,6 +3,7 @@
 #include <memory>
 #include <sstream>
 
+#include <GLFW/glfw3.h>
 #include "liteP.h"
 
 using packet_ptr_t = std::unique_ptr<AVPacket, void(*)(AVPacket*)>;
@@ -22,7 +23,7 @@ std::string readFile(const char* path)
 
 int main(int argc, char* argv[])
 {
-    const char* media_path = "../../example.mp4";
+    const char* media_path = "../../../../example.mp4";
     if (argc > 1) {
         media_path = argv[1];
     }
@@ -45,44 +46,53 @@ int main(int argc, char* argv[])
 
     liteP::Decode decode(video_packet_queue, video_frame_queue, video_codecpar);
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) == false) {
-        std::print(stderr, "SDL_Init failed\n");
+    if (glfwInit() == GLFW_FALSE) {
+        std::print(stderr, "glfwInit failed\n");
         return -2;
     }
 
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#if defined(__APPLE__)
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+#endif
 
-    SDL_Window* window = SDL_CreateWindow(
-        "litePlayer",
+    GLFWwindow* window = glfwCreateWindow(
         video_w > 0 ? video_w : 640,
         video_h > 0 ? video_h : 360,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+        "litePlayer",
+        nullptr,
+        nullptr);
     if (window == nullptr) {
-        std::print(stderr, "SDL_CreateWindow failed\n");
-        SDL_Quit();
+        std::print(stderr, "glfwCreateWindow failed\n");
+        glfwTerminate();
         return -3;
     }
 
-    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-    if (!gl_context) {
-        std::print(stderr, "SDL_GL_CreateContext failed\n");
-        SDL_DestroyWindow(window);
-        SDL_Quit();
+    glfwMakeContextCurrent(window);
+    if (gladLoadGLLoader((GLADloadproc)glfwGetProcAddress) == 0) {
+        std::print(stderr, "gladLoadGLLoader failed\n");
+        glfwDestroyWindow(window);
+        glfwTerminate();
         return -4;
     }
+    glfwSwapInterval(1);
 
-    std::string vertsrc = readFile("../../shader/vertex.shader");
-    std::string fragsrc = readFile("../../shader/fragment.shader");
+    std::string vertsrc = readFile("../../../../shader/vertex.shader");
+    std::string fragsrc = readFile("../../../../shader/fragment.shader");
     liteP::Renderer renderer(video_w, video_h, vertsrc.c_str(), fragsrc.c_str());
     if (!renderer.ok()) {
         std::print(stderr, "renderer init failed\n");
-        SDL_GL_DestroyContext(gl_context);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
+        glfwDestroyWindow(window);
+        glfwTerminate();
         return -5;
     }
+
+    int fbw = 0;
+    int fbh = 0;
+    glfwGetFramebufferSize(window, &fbw, &fbh);
+    glViewport(0, 0, fbw, fbh);
 
     demux.run();
     decode.run();
@@ -93,12 +103,10 @@ int main(int argc, char* argv[])
     auto wall_start = std::chrono::steady_clock::now();
 
     while (!quit) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) {
-                quit = true;
-                break;
-            }
+        glfwPollEvents();
+        if (glfwWindowShouldClose(window) == GLFW_TRUE) {
+            quit = true;
+            break;
         }
 
         auto frame_opt = video_frame_queue.pop_front();
@@ -129,16 +137,17 @@ int main(int argc, char* argv[])
             }
         }
 
+        glfwGetFramebufferSize(window, &fbw, &fbh);
+        glViewport(0, 0, fbw, fbh);
         renderer.renderFrame(frame.get());
-        SDL_GL_SwapWindow(window);
+        glfwSwapBuffers(window);
     }
 
     demux.stop();
     decode.stop();
     renderer.shutdown();
 
-    SDL_GL_DestroyContext(gl_context);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+    glfwDestroyWindow(window);
+    glfwTerminate();
     return 0;
 }
