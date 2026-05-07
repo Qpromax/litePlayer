@@ -1,0 +1,260 @@
+Language: Cpp
+Standard: Latest
+
+# =============================================================================
+# Indentation（缩进策略）
+# =============================================================================
+
+UseTab: Never
+# 使用空格进行续行与缩进
+
+TabWidth: 4
+IndentWidth: 4
+ContinuationIndentWidth: 4
+# tab / 空格统一等价宽度为 4
+
+NamespaceIndentation: All
+# namespace 内部完全缩进
+
+IndentAccessModifiers: false
+# public/private/protected 不额外缩进（保持类成员对齐）
+
+AccessModifierOffset: -4
+# 访问控制符向左偏移 4
+
+IndentCaseLabels: true
+# case 标签缩进
+
+IndentGotoLabels: false
+# goto label 不缩进（保持列对齐）
+
+IndentPPDirectives: BeforeHash
+# 预处理指令 # 之前缩进
+
+# =============================================================================
+# Alignment（对齐策略）
+# =============================================================================
+
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+# 连续赋值对齐（只对连续语句生效，不跨空行/注释）
+
+AlignConsecutiveDeclarations:
+  Enabled: true
+# 连续声明对齐（变量列表竖直对齐）
+
+AlignConsecutiveMacros: true
+# 宏定义对齐（#define 表格化）
+
+AlignAfterOpenBracket: Align
+# 括号后不做对齐（避免参数列被强制拉齐）
+
+AlignOperands: AlignAfterOperator
+# 运算符后对齐操作数（增强表达式结构感）
+
+AlignTrailingComments: true
+# 行尾注释对齐（形成注释列）
+
+AlignEscapedNewlines: Left
+# "\" 续行符左对齐（防止右侧漂移）
+
+# =============================================================================
+# Brace Wrapping（大括号风格：Allman）
+# =============================================================================
+
+BreakBeforeBraces: Custom
+# 自定义括号规则（核心控制点）
+
+BraceWrapping:
+  AfterClass: true
+  AfterControlStatement: true
+  AfterCaseLabel: true
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: true
+# 所有结构均采用 Allman 风格：
+# {
+#   ...
+# }
+
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeWhile: true
+# catch / else / while 另起一行（典型 Allman 强风格）
+
+  BeforeLambdaBody: true
+# lambda 花括号独立换行
+
+  IndentBraces: false
+# brace 本身不额外缩进（保持结构层级稳定）
+
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+# 空结构强制拆行：
+# class X {
+# };
+
+# =============================================================================
+# Line Breaking（换行策略）
+# =============================================================================
+
+ColumnLimit: 120
+# 最大行宽 120
+
+BreakBeforeBinaryOperators: All
+# 二元运算符换行时非赋值运算符优先前置
+
+BreakBeforeTernaryOperators: true
+# 三元表达式换行规则启用
+
+BreakTemplateDeclarations: Yes
+# template 参数声明允许换行
+
+BreakInheritanceList: BeforeComma
+# 继承列表在逗号前断行
+
+BreakConstructorInitializers: BeforeComma
+# 初始化列表逗号前换行
+
+PenaltyReturnTypeOnItsOwnLine: 999
+# 函数返回类型单独一行代价极高 → 几乎禁止拆分
+
+# =============================================================================
+# Function / Parameter Layout（函数布局）
+# =============================================================================
+
+BinPackArguments: false
+BinPackParameters: false
+# 参数/实参不压缩（禁止挤成一行）
+
+AllowAllParametersOfDeclarationOnNextLine: false
+# 不允许全部参数整体下沉一行
+
+PenaltyBreakBeforeFirstCallParameter: 1
+# 函数调用首参数换行惩罚极低 → 倾向拆行
+
+PackConstructorInitializers: NextLine
+# 构造函数初始化列表整体换行到下一行
+
+AllowAllConstructorInitializersOnNextLine: false
+# 不允许全部 initializer 压成一行
+
+# =============================================================================
+# Short Blocks（短代码块策略：严格展开）
+# =============================================================================
+
+AllowShortBlocksOnASingleLine: Empty
+# 仅允许空 block 单行（例如 {}）
+
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: None
+# ——全部禁止压缩 —— 强制结构展开
+
+# =============================================================================
+# Whitespace（空格策略）
+# =============================================================================
+
+SpaceBeforeParens: ControlStatements
+# 仅控制语句有空格：if (x)
+
+SpaceBeforeAssignmentOperators: true
+# = 前后空格统一
+
+SpaceBeforeCpp11BracedList: true
+# 初始化列表前加空格
+
+SpaceBeforeRangeBasedForLoopColon: true
+# for (x : y)
+
+SpaceAfterCStyleCast: false
+# C 风格 cast 无空格
+
+SpaceAfterTemplateKeyword: true
+# template <...>
+
+SpaceAfterLogicalNot: false
+# !x 不加空格
+
+SpacesBeforeTrailingComments: 1
+# 行尾注释前至少 1 空格
+
+SpacesInAngles: false
+# <T> 不加空格
+
+SpacesInContainerLiterals: false
+# {a, b, c} 内部无空格
+
+SpacesInCStyleCastParentheses: false
+SpacesInConditionalStatement: false
+SpacesInParentheses: false
+# (x + y) —— 强制括号内无空格
+
+SpacesInSquareBrackets: false
+# [i] 风格
+
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+
+# =============================================================================
+# Pointers / Qualifiers（指针与修饰符对齐）
+# =============================================================================
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+# int* p;  * 靠类型
+
+DerivePointerAlignment: false
+# 不自动推断风格（避免 clang-format 自适应变化）
+
+QualifierAlignment: Custom
+QualifierOrder: [inline, static, constexpr, const, type]
+# 修饰符排序强制统一
+
+# =============================================================================
+# Structure / Cleanup（结构与整理）
+# =============================================================================
+
+SeparateDefinitionBlocks: Always
+# 不同定义块强制分离（提升模块边界清晰度）
+
+KeepEmptyLinesAtTheStartOfBlocks: false
+# block 开头不保留多余空行
+
+MaxEmptyLinesToKeep: 1
+# 最多保留 1 行空行
+
+FixNamespaceComments: true
+# 自动修复 namespace 注释闭合
+
+CompactNamespaces: false
+# 不压缩 namespace（保持层级展开）
+
+Cpp11BracedListStyle: true
+# 统一使用 {} 初始化风格
+
+ReflowComments: false
+# 不重排注释（避免破坏手写结构）
+
+SortUsingDeclarations: true
+# using 自动排序
+
+InsertBraces: true
+# 单行 if/for 强制加 {}
+
+CommentPragmas: '^ IWYU pragma:'
+# IWYU pragma 保持原样不被改写
+
+ForEachMacros:
+  - foreach
+  - Q_FOREACH
+  - BOOST_FOREACH
+# 识别这些宏为循环结构（影响 formatting 行为）

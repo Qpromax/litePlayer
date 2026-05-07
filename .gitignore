@@ -1,0 +1,10 @@
+.DS_store
+build
+cmake-build-debug
+.idea
+.vscode
+CMakeUserPresets.json
+example.mp4
+.xmake
+.cache
+compile_commands.json

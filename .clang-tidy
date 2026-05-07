@@ -1,0 +1,140 @@
+---
+# =============================================================================
+# Clang-Tidy 配置文件 - 极致现代化与 Core Guidelines 完全遵守版
+# =============================================================================
+
+# 屏蔽系统头文件检查，仅检查项目代码
+SystemHeaders: false
+# 过滤头文件警告：仅显示 include 和 src 目录下的警告（根据实际项目结构调整）
+HeaderFilterRegex: '^include/.*|src/.*'
+
+# =============================================================================
+# 1. 检查项配置 (Checks)
+# =============================================================================
+# 使用 '-' 开头表示禁用，其余为启用
+Checks: >
+  -*,
+  # --- C++ Core Guidelines (核心准则) ---
+  cppcoreguidelines-*,
+  
+  # --- Modernize (强制现代化) ---
+  modernize-*,
+  -modernize-use-trailing-return-type, # 如果你不喜欢 auto func() -> int 风格可禁用
+
+  # --- Bugprone (逻辑漏洞与安全) ---
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+
+  # --- CERT (安全编码标准) ---
+  cert-*,
+
+  # --- Readability (可读性与命名规范) ---
+  readability-*,
+  -readability-identifier-length,            # 允许短变量名(如 i, j)
+  -readability-magic-numbers,               # 视情况开启，若硬编码较多建议关掉
+  -readability-redundant-access-specifiers,
+
+  # --- Performance (性能优化) ---
+  performance-*,
+
+  # --- 其他强化 ---
+  clang-analyzer-*,
+  hicpp-*,
+  misc-*
+
+# =============================================================================
+# 2. 编译参数 (Compilation Args)
+# =============================================================================
+ExtraArgs: [-std=c++20]
+
+# =============================================================================
+# 3. 详细参数配置 (CheckOptions)
+# =============================================================================
+CheckOptions:
+
+  # --- 1. 复杂度控制 (Core Guidelines 严苛模式) ---
+  - key: readability-function-size.LineThreshold
+    value: 80 # 函数建议不超过80行
+  - key: readability-function-size.NestingThreshold
+    value: 3  # 嵌套层次强制限制
+  - key: readability-function-size.ParameterThreshold
+    value: 5  # 参数个数限制
+
+  # --- 2. 命名规范 (你自定义的体系) ---
+  # 类型
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+  
+  # 函数
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.MethodCase
+    value: lower_case
+
+  # 变量基础
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+
+  # 成员变量 (m_)
+  - key: readability-identifier-naming.ClassMemberPrefix
+    value: m_
+  - key: readability-identifier-naming.ClassMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberPrefix
+    value: m_
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+
+  # 全局与静态 (g_ / s_)
+  - key: readability-identifier-naming.GlobalVariablePrefix
+    value: g_
+  - key: readability-identifier-naming.GlobalVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.StaticVariablePrefix
+    value: s_
+  - key: readability-identifier-naming.StaticVariableCase
+    value: lower_case
+
+  # 指针 (p_ / g_p_)
+  - key: readability-identifier-naming.PointerParameterPrefix
+    value: p_
+  - key: readability-identifier-naming.LocalPointerPrefix
+    value: p_
+  - key: readability-identifier-naming.GlobalPointerPrefix
+    value: g_p_
+
+  # 常量 (c_ / g_c_)
+  - key: readability-identifier-naming.ConstantPrefix
+    value: c_
+  - key: readability-identifier-naming.LocalConstantPrefix
+    value: c_
+  - key: readability-identifier-naming.GlobalConstantPrefix
+    value: g_c_
+
+  # 宏 (UPPER_CASE)
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+
+  # --- 3. 现代化与安全性细节 ---
+  # 强制要求构造函数显式声明
+  - key: cppcoreguidelines-explicit-virtual-functions.IgnoreDestructors
+    value: true
+  # 允许在类成员初始化时使用默认值
+  - key: modernize-use-default-member-init.UseAssignment
+    value: true
+  # 检查智能指针 .get() 的冗余调用
+  - key: readability-redundant-smartptr-get.IgnoreMacros
+    value: true
+
+# =============================================================================
+# 4. 格式化说明
+# =============================================================================
+# WarningsAsErrors: '*' # 若需要 CI 强制拦截，取消此行注释
