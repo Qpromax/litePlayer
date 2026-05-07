@@ -247,6 +247,10 @@ ReflowComments: false
 SortUsingDeclarations: true
 # using 自动排序
 
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve  
+# 保持现有的 include 块，不跨越空行重新合并排序
+
 InsertBraces: true
 # 单行 if/for 强制加 {}
 

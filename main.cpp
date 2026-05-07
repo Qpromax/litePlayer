@@ -1,15 +1,24 @@
+extern "C"
+{
+#include "libavcodec/packet.h"
+#include "libavutil/frame.h"
+}
+#include <GLFW/glfw3.h>
+
 #include <chrono>
 #include <fstream>
-#include <memory>
+#include <print>
 #include <sstream>
 
-#include "liteP.h"
-#include <GLFW/glfw3.h>
+#include "src/engine/decoder.h"
+#include "src/engine/demuxer.h"
+#include "src/engine/queue.h"
+#include "src/renderer/video.h"
 
 using packet_ptr_t = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
 using frame_ptr_t  = std::unique_ptr<AVFrame, void (*)(AVFrame*)>;
 
-std::string readFile(const char* path)
+std::string read_file(const char* path)
 {
     std::ifstream file(path);
     if (!file.is_open())
@@ -32,11 +41,11 @@ int main(int argc, char* argv[])
 
     std::print("{}\n", media_path);
 
-    liteP::TSDeque<packet_ptr_t> video_packet_queue(120);
-    liteP::TSDeque<packet_ptr_t> audio_packet_queue(120);
-    liteP::TSDeque<frame_ptr_t>  video_frame_queue(60);
+    TSDeque<packet_ptr_t> video_packet_queue(120);
+    TSDeque<packet_ptr_t> audio_packet_queue(120);
+    TSDeque<frame_ptr_t>  video_frame_queue(60);
 
-    liteP::Demux demux(video_packet_queue, audio_packet_queue, media_path);
+    Demux demux(video_packet_queue, audio_packet_queue, media_path);
 
     const AVCodecParameters* video_codecpar = demux.video_codecpar();
     if (video_codecpar == nullptr)
@@ -47,7 +56,7 @@ int main(int argc, char* argv[])
     const auto [video_w, video_h]    = demux.video_size();
     const AVRational video_time_base = demux.video_time_base();
 
-    liteP::Decode decode(video_packet_queue, video_frame_queue, video_codecpar);
+    Decode decode(video_packet_queue, video_frame_queue, video_codecpar);
 
     if (glfwInit() == GLFW_FALSE)
     {
@@ -81,9 +90,9 @@ int main(int argc, char* argv[])
     }
     glfwSwapInterval(1);
 
-    std::string     vertsrc = readFile("../../../../shader/vertex.shader");
-    std::string     fragsrc = readFile("../../../../shader/fragment.shader");
-    liteP::Renderer renderer(video_w, video_h, vertsrc.c_str(), fragsrc.c_str());
+    std::string vertsrc = read_file("../../../../shader/vertex.shader");
+    std::string fragsrc = read_file("../../../../shader/fragment.shader");
+    Renderer    renderer(video_w, video_h, vertsrc.c_str(), fragsrc.c_str());
     if (!renderer.ok())
     {
         std::print(stderr, "renderer init failed\n");

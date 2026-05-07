@@ -6,6 +6,7 @@ add_requires(
     "glfw",
     "glad",
     "ffmpeg",
+    "stdexec",
     "imgui", {configs = {glfw_opengl3 = true}}
 )
 
@@ -13,7 +14,7 @@ target("litePlayer")
     set_kind("binary")
     add_files("main.cpp")
 
-    add_packages("glfw", "glad", "ffmpeg", "imgui")
+    add_packages("glfw", "glad", "ffmpeg", "stdexec", "imgui")
 
     if is_plat("macosx") then
         add_defines("GL_SILENCE_DEPRECATION")
