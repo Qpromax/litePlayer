@@ -15,8 +15,8 @@ extern "C"
 #include "src/engine/queue.h"
 #include "src/renderer/video.h"
 
-using packet_ptr_t = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
-using frame_ptr_t  = std::unique_ptr<AVFrame, void (*)(AVFrame*)>;
+using ptr_packet_t = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
+using ptr_frame_t  = std::unique_ptr<AVFrame, void (*)(AVFrame*)>;
 
 std::string read_file(const char* path)
 {
@@ -41,11 +41,11 @@ int main(int argc, char* argv[])
 
     std::print("{}\n", media_path);
 
-    TSDeque<packet_ptr_t> video_packet_queue(120);
-    TSDeque<packet_ptr_t> audio_packet_queue(120);
-    TSDeque<frame_ptr_t>  video_frame_queue(60);
+    TSDeque<ptr_packet_t> video_packet_queue(120);
+    TSDeque<ptr_packet_t> audio_packet_queue(120);
+    TSDeque<ptr_frame_t>  video_frame_queue(60);
 
-    Demux demux(video_packet_queue, audio_packet_queue, media_path);
+    Demuxer demux(video_packet_queue, audio_packet_queue, media_path);
 
     const AVCodecParameters* video_codecpar = demux.video_codecpar();
     if (video_codecpar == nullptr)
@@ -56,7 +56,7 @@ int main(int argc, char* argv[])
     const auto [video_w, video_h]    = demux.video_size();
     const AVRational video_time_base = demux.video_time_base();
 
-    Decode decode(video_packet_queue, video_frame_queue, video_codecpar);
+    Decoder decode(video_packet_queue, video_frame_queue, video_codecpar);
 
     if (glfwInit() == GLFW_FALSE)
     {

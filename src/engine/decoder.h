@@ -11,31 +11,31 @@ extern "C"
 
 #include "./queue.h"
 
-class Decode
+class Decoder
 {
 private:
     // TODO:    simplify deleter
-    using packet_ptr_t    = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
-    using frame_ptr_t     = std::unique_ptr<AVFrame, void (*)(AVFrame*)>;
-    using codec_ctx_ptr_t = std::unique_ptr<AVCodecContext, void (*)(AVCodecContext*)>;
+    using ptr_packet_t    = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
+    using ptr_frame_t     = std::unique_ptr<AVFrame, void (*)(AVFrame*)>;
+    using ptr_codec_ctx_t = std::unique_ptr<AVCodecContext, void (*)(AVCodecContext*)>;
 
-    codec_ctx_ptr_t codec_ctx_ptr_ {nullptr,
-                                    [](AVCodecContext* p)
-                                    {
-                                        if (p != nullptr)
-                                        {
-                                            avcodec_free_context(&p);
-                                        }
-                                    }};
+    ptr_codec_ctx_t m_ptr_codec_ctx {nullptr,
+                                     [](AVCodecContext* p)
+                                     {
+                                         if (p != nullptr)
+                                         {
+                                             avcodec_free_context(&p);
+                                         }
+                                     }};
 
-    TSDeque<packet_ptr_t>& packet_queue_;
-    TSDeque<frame_ptr_t>&  frame_queue_;
-    std::jthread           thread_;
-    bool                   ready_ = false;
+    TSDeque<ptr_packet_t>& m_packet_queue;
+    TSDeque<ptr_frame_t>&  m_frame_queue;
+    std::jthread           m_thread;
+    bool                   m_ready = false;
 
 public:
-    explicit Decode(TSDeque<packet_ptr_t>& pq, TSDeque<frame_ptr_t>& fq, const AVCodecParameters* codecpar)
-        : packet_queue_(pq), frame_queue_(fq)
+    explicit Decoder(TSDeque<ptr_packet_t>& pq, TSDeque<ptr_frame_t>& fq, const AVCodecParameters* codecpar)
+        : m_packet_queue(pq), m_frame_queue(fq)
     {
         if (codecpar == nullptr)
         {
@@ -50,57 +50,57 @@ public:
             return;
         }
 
-        codec_ctx_ptr_.reset(avcodec_alloc_context3(codec));
-        if (codec_ctx_ptr_ == nullptr)
+        m_ptr_codec_ctx.reset(avcodec_alloc_context3(codec));
+        if (m_ptr_codec_ctx == nullptr)
         {
             std::print(stderr, "Decode could not allocate codec context\n");
             return;
         }
 
-        int ret = avcodec_parameters_to_context(codec_ctx_ptr_.get(), codecpar);
+        int ret = avcodec_parameters_to_context(m_ptr_codec_ctx.get(), codecpar);
         if (ret < 0)
         {
             std::print(stderr, "Decode failed to copy codec parameters to context\n");
             return;
         }
 
-        codec_ctx_ptr_->thread_count = 0;               // auto threads
-        codec_ctx_ptr_->thread_type  = FF_THREAD_FRAME; // frame parallel
+        m_ptr_codec_ctx->thread_count = 0;               // auto threads
+        m_ptr_codec_ctx->thread_type  = FF_THREAD_FRAME; // frame parallel
 
-        ret = avcodec_open2(codec_ctx_ptr_.get(), codec, nullptr);
+        ret = avcodec_open2(m_ptr_codec_ctx.get(), codec, nullptr);
         if (ret < 0)
         {
             std::print(stderr, "Decode could not open codec\n");
             return;
         }
 
-        ready_ = true;
+        m_ready = true;
     }
 
-    Decode(const Decode&)              = delete;
-    Decode& operator=(const Decode&)   = delete;
-    Decode(Decode&&)                   = delete;
-    Decode& operator=(Decode&&)        = delete;
-    auto    operator<=>(const Decode&) = delete;
+    Decoder(const Decoder&)              = delete;
+    Decoder& operator=(const Decoder&)   = delete;
+    Decoder(Decoder&&)                   = delete;
+    Decoder& operator=(Decoder&&)        = delete;
+    auto     operator<=>(const Decoder&) = delete;
 
-    ~Decode()
+    ~Decoder()
     {
         stop();
     }
 
     void run()
     {
-        if (!ready_ || codec_ctx_ptr_ == nullptr)
+        if (!m_ready || m_ptr_codec_ctx == nullptr)
         {
             std::print(stderr, "Decode not ready, run() skipped\n");
             return;
         }
-        if (thread_.joinable())
+        if (m_thread.joinable())
         {
             std::print(stderr, "Demux already running, run() skipped\n");
             return;
         }
-        thread_ = std::jthread(
+        m_thread = std::jthread(
             [this](const std::stop_token& st)
             {
                 task(st);
@@ -109,12 +109,12 @@ public:
 
     void stop()
     {
-        if (thread_.joinable())
+        if (m_thread.joinable())
         {
-            thread_.request_stop();
-            packet_queue_.close();
-            frame_queue_.close();
-            thread_.join();
+            m_thread.request_stop();
+            m_packet_queue.close();
+            m_frame_queue.close();
+            m_thread.join();
         }
     }
 
@@ -123,7 +123,7 @@ private:
     {
         while (st.stop_requested() == false)
         {
-            auto pkt_opt = packet_queue_.pop_front();
+            auto pkt_opt = m_packet_queue.pop_front();
             if (pkt_opt == std::nullopt)
             {
                 break; // upstream closed
@@ -131,7 +131,7 @@ private:
 
             auto& pkt = *pkt_opt;
 
-            const int ret_send = avcodec_send_packet(codec_ctx_ptr_.get(), pkt.get());
+            const int ret_send = avcodec_send_packet(m_ptr_codec_ctx.get(), pkt.get());
             if (ret_send < 0)
             {
                 // bad packet or decoder state; skip this packet
@@ -140,7 +140,7 @@ private:
 
             while (st.stop_requested() == false)
             {
-                frame_ptr_t frame(av_frame_alloc(),
+                ptr_frame_t frame(av_frame_alloc(),
                                   [](AVFrame* f)
                                   {
                                       if (f != nullptr)
@@ -150,11 +150,11 @@ private:
                                   });
                 if (frame == nullptr)
                 {
-                    frame_queue_.close();
+                    m_frame_queue.close();
                     return;
                 }
 
-                const int ret_recv = avcodec_receive_frame(codec_ctx_ptr_.get(), frame.get());
+                const int ret_recv = avcodec_receive_frame(m_ptr_codec_ctx.get(), frame.get());
 
                 if (ret_recv == AVERROR(EAGAIN) || ret_recv == AVERROR_EOF)
                 {
@@ -166,19 +166,19 @@ private:
                     break;
                 }
 
-                if (frame_queue_.push(std::move(frame)) == false)
+                if (m_frame_queue.push(std::move(frame)) == false)
                 {
-                    frame_queue_.close(); // downstream closed
+                    m_frame_queue.close(); // downstream closed
                     return;
                 }
             }
         }
 
         // flush delayed frames
-        avcodec_send_packet(codec_ctx_ptr_.get(), nullptr);
+        avcodec_send_packet(m_ptr_codec_ctx.get(), nullptr);
         while (st.stop_requested() == false)
         {
-            frame_ptr_t frame(av_frame_alloc(),
+            ptr_frame_t frame(av_frame_alloc(),
                               [](AVFrame* f)
                               {
                                   if (f != nullptr)
@@ -191,7 +191,7 @@ private:
                 break;
             }
 
-            const int ret_recv = avcodec_receive_frame(codec_ctx_ptr_.get(), frame.get());
+            const int ret_recv = avcodec_receive_frame(m_ptr_codec_ctx.get(), frame.get());
             if (ret_recv == AVERROR(EAGAIN) || ret_recv == AVERROR_EOF)
             {
                 break;
@@ -202,12 +202,12 @@ private:
                 break;
             }
 
-            if (frame_queue_.push(std::move(frame)) == false)
+            if (m_frame_queue.push(std::move(frame)) == false)
             {
                 break;
             }
         }
 
-        frame_queue_.close();
+        m_frame_queue.close();
     }
 };

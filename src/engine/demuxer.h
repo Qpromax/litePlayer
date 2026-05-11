@@ -12,66 +12,66 @@ extern "C"
 
 #include "./queue.h"
 
-class Demux
+class Demuxer
 {
 private:
-    using packet_ptr_t     = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
-    using format_ctx_ptr_t = std::unique_ptr<AVFormatContext, void (*)(AVFormatContext*)>;
+    using ptr_packet_t     = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
+    using ptr_format_ctx_t = std::unique_ptr<AVFormatContext, void (*)(AVFormatContext*)>;
 
     // AVFormatContext* fmtCtx = nullptr;
     // TODO:    simplify deleter
-    format_ctx_ptr_t format_ctx_ptr_ {nullptr,
-                                      [](AVFormatContext* p)
-                                      {
-                                          if (p != nullptr)
-                                          {
-                                              avformat_close_input(&p);
-                                          }
-                                      }};
+    ptr_format_ctx_t m_p_format_ctx {nullptr,
+                                     [](AVFormatContext* p)
+                                     {
+                                         if (p != nullptr)
+                                         {
+                                             avformat_close_input(&p);
+                                         }
+                                     }};
 
-    TSDeque<packet_ptr_t>& video_queue_;
-    TSDeque<packet_ptr_t>& audio_queue_;
-    std::jthread           thread_;
-    int                    video_stream_index_ = -1;
-    int                    audio_stream_index_ = -1;
-    bool                   ready_              = false;
+    TSDeque<ptr_packet_t>& m_video_queue;
+    TSDeque<ptr_packet_t>& m_audio_queue;
+    std::jthread           m_thread;
+    int                    m_video_stream_index = -1;
+    int                    m_audio_stream_index = -1;
+    bool                   m_ready              = false;
 
 public:
-    explicit Demux(TSDeque<packet_ptr_t>& vq, TSDeque<packet_ptr_t>& aq, const char* path)
-        : video_queue_(vq), audio_queue_(aq)
+    explicit Demuxer(TSDeque<ptr_packet_t>& vq, TSDeque<ptr_packet_t>& aq, const char* path)
+        : m_video_queue(vq), m_audio_queue(aq)
     {
-        format_ctx_ptr_ = open_input(path);
-        if (format_ctx_ptr_ == nullptr)
+        m_p_format_ctx = open_input(path);
+        if (m_p_format_ctx == nullptr)
         {
             std::print(stderr, "Demux could not open input\n");
             return;
         }
 
-        if (avformat_find_stream_info(format_ctx_ptr_.get(), nullptr) < 0)
+        if (avformat_find_stream_info(m_p_format_ctx.get(), nullptr) < 0)
         {
             std::print(stderr, "Demux could not find stream info\n");
             return;
         }
 
-        video_stream_index_ = av_find_best_stream(format_ctx_ptr_.get(), AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-        audio_stream_index_ = av_find_best_stream(format_ctx_ptr_.get(), AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+        m_video_stream_index = av_find_best_stream(m_p_format_ctx.get(), AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+        m_audio_stream_index = av_find_best_stream(m_p_format_ctx.get(), AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
 
-        if (video_stream_index_ < 0)
+        if (m_video_stream_index < 0)
         {
             std::print(stderr, "Demux could not find video stream\n");
             return;
         }
 
-        ready_ = true;
+        m_ready = true;
     }
 
-    Demux(const Demux&)             = delete;
-    Demux operator=(const Demux&)   = delete;
-    Demux(Demux&&)                  = delete;
-    Demux operator=(Demux&&)        = delete;
-    auto  operator<=>(const Demux&) = delete;
+    Demuxer(const Demuxer&)             = delete;
+    Demuxer operator=(const Demuxer&)   = delete;
+    Demuxer(Demuxer&&)                  = delete;
+    Demuxer operator=(Demuxer&&)        = delete;
+    auto    operator<=>(const Demuxer&) = delete;
 
-    ~Demux()
+    ~Demuxer()
     {
         stop();
         // avformat_close_input(&fmtCtx);
@@ -79,16 +79,16 @@ public:
 
     [[nodiscard]] bool ready() const
     {
-        return ready_;
+        return m_ready;
     }
 
     [[nodiscard]] const AVCodecParameters* video_codecpar() const
     {
-        if (!ready_ || !format_ctx_ptr_ || video_stream_index_ < 0)
+        if (!m_ready || !m_p_format_ctx || m_video_stream_index < 0)
         {
             return nullptr;
         }
-        return format_ctx_ptr_->streams[video_stream_index_]->codecpar;
+        return m_p_format_ctx->streams[m_video_stream_index]->codecpar;
     }
 
     [[nodiscard]] std::pair<int, int> video_size() const
@@ -103,28 +103,28 @@ public:
 
     [[nodiscard]] AVRational video_time_base() const
     {
-        if (!format_ctx_ptr_ || video_stream_index_ < 0)
+        if (!m_p_format_ctx || m_video_stream_index < 0)
         {
             return AVRational {0, 1};
         }
-        return format_ctx_ptr_->streams[video_stream_index_]->time_base;
+        return m_p_format_ctx->streams[m_video_stream_index]->time_base;
     }
 
     void run()
     {
-        if (ready_ == false || format_ctx_ptr_ == nullptr || video_stream_index_ < 0)
+        if (m_ready == false || m_p_format_ctx == nullptr || m_video_stream_index < 0)
         {
-            video_queue_.close();
-            audio_queue_.close();
+            m_video_queue.close();
+            m_audio_queue.close();
             std::print(stderr, "Decode not ready, run() skipped, queue closed\n");
             return;
         }
-        if (thread_.joinable())
+        if (m_thread.joinable())
         {
             std::print(stderr, "Demux already running, run() skipped\n");
             return;
         }
-        thread_ = std::jthread(
+        m_thread = std::jthread(
             [this](const std::stop_token& st)
             {
                 task(st);
@@ -133,17 +133,17 @@ public:
 
     void stop()
     {
-        if (thread_.joinable())
+        if (m_thread.joinable())
         {
-            video_queue_.close();
-            audio_queue_.close();
-            thread_.request_stop();
-            thread_.join();
+            m_video_queue.close();
+            m_audio_queue.close();
+            m_thread.request_stop();
+            m_thread.join();
         }
     }
 
 private:
-    [[nodiscard]] static format_ctx_ptr_t open_input(const char* pt)
+    [[nodiscard]] static ptr_format_ctx_t open_input(const char* pt)
     {
         AVFormatContext* raw = avformat_alloc_context();
         const int        ret = avformat_open_input(&raw, pt, nullptr, nullptr);
@@ -158,6 +158,7 @@ private:
                         }
                     }};
         }
+
         return {raw,
                 [](AVFormatContext* p)
                 {
@@ -172,7 +173,7 @@ private:
     {
         while (st.stop_requested() == false)
         {
-            packet_ptr_t pkt_ptr(av_packet_alloc(),
+            ptr_packet_t ptr_pkt(av_packet_alloc(),
                                  [](AVPacket* p)
                                  {
                                      if (p != nullptr)
@@ -181,12 +182,12 @@ private:
                                      }
                                  });
 
-            if (pkt_ptr == nullptr)
+            if (ptr_pkt == nullptr)
             {
                 break;
             }
 
-            const int ret = av_read_frame(format_ctx_ptr_.get(), pkt_ptr.get());
+            const int ret = av_read_frame(m_p_format_ctx.get(), ptr_pkt.get());
             if (ret < 0)
             {
                 break;
@@ -194,13 +195,13 @@ private:
 
             // TODO:    consider switch
             bool pushed = true;
-            if (pkt_ptr->stream_index == video_stream_index_)
+            if (ptr_pkt->stream_index == m_video_stream_index)
             {
-                pushed = video_queue_.push(std::move(pkt_ptr));
+                pushed = m_video_queue.push(std::move(ptr_pkt));
             }
-            else if (pkt_ptr->stream_index == audio_stream_index_)
+            else if (ptr_pkt->stream_index == m_audio_stream_index)
             {
-                pushed = audio_queue_.push(std::move(pkt_ptr));
+                pushed = m_audio_queue.push(std::move(ptr_pkt));
             }
             else
             {
@@ -214,7 +215,7 @@ private:
             }
         }
 
-        video_queue_.close();
-        audio_queue_.close();
+        m_video_queue.close();
+        m_audio_queue.close();
     };
 };
