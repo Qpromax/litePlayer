@@ -9,32 +9,30 @@ extern "C"
 #include <print>
 #include <thread>
 
+#include "../utils/ffmpeg_deleter.h"
 #include "./queue.h"
+
+namespace
+{
+
+}
 
 class Decoder
 {
 private:
     // TODO:    simplify deleter
-    using ptr_packet_t    = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
-    using ptr_frame_t     = std::unique_ptr<AVFrame, void (*)(AVFrame*)>;
-    using ptr_codec_ctx_t = std::unique_ptr<AVCodecContext, void (*)(AVCodecContext*)>;
+    using ptr_packet_t    = std::unique_ptr<AVPacket, av_packet_deleter>;
+    using ptr_frame_t     = std::unique_ptr<AVFrame, av_frame_deleter>;
+    using ptr_codec_ctx_t = std::unique_ptr<AVCodecContext, av_codec_context_deleter>;
 
-    ptr_codec_ctx_t m_ptr_codec_ctx {nullptr,
-                                     [](AVCodecContext* p)
-                                     {
-                                         if (p != nullptr)
-                                         {
-                                             avcodec_free_context(&p);
-                                         }
-                                     }};
-
-    TSDeque<ptr_packet_t>& m_packet_queue;
-    TSDeque<ptr_frame_t>&  m_frame_queue;
-    std::jthread           m_thread;
-    bool                   m_ready = false;
+    ptr_codec_ctx_t         m_ptr_codec_ctx {nullptr};
+    SPCQueue<ptr_packet_t>& m_packet_queue;
+    SPCQueue<ptr_frame_t>&  m_frame_queue;
+    std::jthread            m_thread;
+    bool                    m_ready = false;
 
 public:
-    explicit Decoder(TSDeque<ptr_packet_t>& pq, TSDeque<ptr_frame_t>& fq, const AVCodecParameters* codecpar)
+    explicit Decoder(SPCQueue<ptr_packet_t>& pq, SPCQueue<ptr_frame_t>& fq, const AVCodecParameters* codecpar)
         : m_packet_queue(pq), m_frame_queue(fq)
     {
         if (codecpar == nullptr)
@@ -123,7 +121,7 @@ private:
     {
         while (st.stop_requested() == false)
         {
-            auto pkt_opt = m_packet_queue.pop_front();
+            auto pkt_opt = m_packet_queue.pop();
             if (pkt_opt == std::nullopt)
             {
                 break; // upstream closed
@@ -140,14 +138,7 @@ private:
 
             while (st.stop_requested() == false)
             {
-                ptr_frame_t frame(av_frame_alloc(),
-                                  [](AVFrame* f)
-                                  {
-                                      if (f != nullptr)
-                                      {
-                                          av_frame_free(&f);
-                                      }
-                                  });
+                ptr_frame_t frame(av_frame_alloc());
                 if (frame == nullptr)
                 {
                     m_frame_queue.close();
@@ -178,14 +169,7 @@ private:
         avcodec_send_packet(m_ptr_codec_ctx.get(), nullptr);
         while (st.stop_requested() == false)
         {
-            ptr_frame_t frame(av_frame_alloc(),
-                              [](AVFrame* f)
-                              {
-                                  if (f != nullptr)
-                                  {
-                                      av_frame_free(&f);
-                                  }
-                              });
+            ptr_frame_t frame(av_frame_alloc());
             if (frame == nullptr)
             {
                 break;

@@ -1,121 +1,115 @@
 #pragma once
 
-#include <condition_variable>
-#include <deque>
-#include <mutex>
+#include <atomic>
+#include <concepts>
+#include <cstddef>
 #include <optional>
+#include <vector>
 
 template <typename T>
-struct TSDeque
+struct SPCQueue
 {
 private:
-    std::deque<T>           m_data;
-    mutable std::mutex      m_mtx;
-    std::condition_variable m_cond;
-    const size_t            m_max_size;
-    bool                    m_is_running = true;
-
-    // todo: use circle queue
+    std::vector<T> m_data;
+    const size_t   m_max_size;
+    alignas(64) std::atomic<size_t> m_head_ato {0};
+    alignas(64) std::atomic<size_t> m_tail_ato {0};
+    std::atomic<bool> m_is_running_ato {true};
 
 public:
-    explicit TSDeque(size_t max_size = 60) : m_max_size(max_size)
+    explicit SPCQueue(size_t max_size = 128) : m_max_size(max_size)
     {
+        if ((m_max_size & (m_max_size - 1)) != 0)
+        {
+            throw std::invalid_argument("size must be power of two");
+        }
+        m_data.resize(m_max_size);
     }
 
-    TSDeque(const TSDeque&)              = delete;
-    TSDeque& operator=(const TSDeque&)   = delete;
-    TSDeque(TSDeque&&)                   = delete;
-    TSDeque& operator=(TSDeque&&)        = delete;
-    auto     operator<=>(const TSDeque&) = delete;
+    SPCQueue(const SPCQueue&)              = delete;
+    SPCQueue& operator=(const SPCQueue&)   = delete;
+    SPCQueue(SPCQueue&&)                   = delete;
+    SPCQueue& operator=(SPCQueue&&)        = delete;
+    auto      operator<=>(const SPCQueue&) = delete;
 
-    ~TSDeque()
+    ~SPCQueue()
     {
         close();
     }
 
-    // todo: add push_batch()
     template <typename Y>
         requires std::constructible_from<T, Y&&>
     bool push(Y&& item)
     {
-        std::unique_lock<std::mutex> lock(m_mtx);
-        m_cond.wait(lock,
-                    [&]
-                    {
-                        return m_data.size() < m_max_size || !m_is_running;
-                    });
-        if (!m_is_running)
+        size_t tail = m_tail_ato.load(std::memory_order_relaxed);
+        size_t next = (tail + 1) & (m_max_size - 1);
+
+        if (!m_is_running_ato.load(std::memory_order_acquire) || next == m_head_ato.load(std::memory_order_acquire))
         {
             return false;
         }
-        m_data.emplace_back(std::forward<Y>(item));
-        lock.unlock();
-        m_cond.notify_one();
+        m_data[tail] = std::forward<Y>(item);
+
+        m_tail_ato.store(next, std::memory_order_release);
         return true;
     }
 
-    std::optional<T> pop_front()
+    std::optional<T> pop()
     {
-        std::unique_lock<std::mutex> lock(m_mtx);
-        m_cond.wait(lock,
-                    [&]
-                    {
-                        return !m_data.empty() || !m_is_running;
-                    });
-        if (m_data.empty())
+        size_t head = m_head_ato.load(std::memory_order_relaxed);
+
+        if (head == m_tail_ato.load(std::memory_order_acquire))
         {
             return std::nullopt;
         }
-        std::optional<T> item = (std::move(m_data.front()));
-        m_data.pop_front();
-        lock.unlock();
-        m_cond.notify_one();
+        std::optional<T> item = std::move(m_data[head]);
+
+        m_head_ato.store((head + 1) & (m_max_size - 1), std::memory_order_release);
         return item;
     }
 
-    // T front_view() const
-    // {
-    //     std::lock_guard<std::mutex> lock(mtx_);
-    //     if (data_.empty()) {
-    //         return T();
-    //     }
-    //     return data_.front();
-    // }
-
-    [[nodiscard]] size_t size() const
+    bool push_batch()
     {
-        std::lock_guard<std::mutex> lock(m_mtx);
-        return m_data.size();
     }
 
-    void clear()
+    bool clear()
     {
-        std::unique_lock<std::mutex> lock(m_mtx);
-        while (m_data.empty() == false)
+        if (m_is_running_ato.load(std::memory_order_acquire))
         {
-            m_data.pop_front();
+            return false;
         }
-        lock.unlock();
-        m_cond.notify_all();
+        size_t head = m_head_ato.load(std::memory_order_relaxed);
+        size_t tail = m_tail_ato.load(std::memory_order_acquire);
+
+        while (head != tail)
+        {
+            m_data[head] = T {};
+            head         = (head + 1) & (m_max_size - 1);
+        }
+
+        m_head_ato.store(head, std::memory_order_release);
+        m_tail_ato.store(tail, std::memory_order_release);
+        return true;
     }
 
     void close()
     {
-        // lock space
+        if (m_is_running_ato.load(std::memory_order_acquire) == false)
         {
-            std::lock_guard<std::mutex> lock(m_mtx);
-            if (m_is_running == false)
-            {
-                return;
-            }
-            m_is_running = false;
+            return;
         }
-        m_cond.notify_all();
+        m_is_running_ato.store(false, std::memory_order_release);
     }
 
-    [[nodiscard]] bool is_running() const
+    [[nodiscard]] size_t size() const
     {
-        std::lock_guard<std::mutex> lock(m_mtx);
-        return m_is_running;
+        auto tail = m_tail_ato.load(std::memory_order_acquire);
+        auto head = m_head_ato.load(std::memory_order_acquire);
+        return (tail - head) & (m_max_size - 1);
+    }
+
+    [[nodiscard]] bool running_status() const
+    {
+        return m_is_running_ato.load();
     }
 };

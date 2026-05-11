@@ -13,10 +13,12 @@ extern "C"
 #include "src/engine/decoder.h"
 #include "src/engine/demuxer.h"
 #include "src/engine/queue.h"
+// #include "src/logic/executor.h"
 #include "src/renderer/video.h"
+#include "src/utils/ffmpeg_deleter.h"
 
-using ptr_packet_t = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
-using ptr_frame_t  = std::unique_ptr<AVFrame, void (*)(AVFrame*)>;
+using ptr_packet_t = std::unique_ptr<AVPacket, av_packet_deleter>;
+using ptr_frame_t  = std::unique_ptr<AVFrame, av_frame_deleter>;
 
 std::string read_file(const char* path)
 {
@@ -41,9 +43,9 @@ int main(int argc, char* argv[])
 
     std::print("{}\n", media_path);
 
-    TSDeque<ptr_packet_t> video_packet_queue(120);
-    TSDeque<ptr_packet_t> audio_packet_queue(120);
-    TSDeque<ptr_frame_t>  video_frame_queue(60);
+    SPCQueue<ptr_packet_t> video_packet_queue;
+    SPCQueue<ptr_packet_t> audio_packet_queue;
+    SPCQueue<ptr_frame_t>  video_frame_queue;
 
     Demuxer demux(video_packet_queue, audio_packet_queue, media_path);
 
@@ -116,6 +118,8 @@ int main(int argc, char* argv[])
 
     while (!quit)
     {
+        std::print("1");
+
         glfwPollEvents();
         if (glfwWindowShouldClose(window) == GLFW_TRUE)
         {
@@ -123,10 +127,14 @@ int main(int argc, char* argv[])
             break;
         }
 
-        auto frame_opt = video_frame_queue.pop_front();
+        auto frame_opt = video_frame_queue.pop();
         if (frame_opt == std::nullopt)
         {
-            break;
+            if (!video_frame_queue.running_status())
+            {
+                break;
+            }
+            continue;
         }
 
         auto&         frame = *frame_opt;

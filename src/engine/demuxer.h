@@ -10,34 +10,25 @@ extern "C"
 #include <print>
 #include <thread>
 
+#include "../utils/ffmpeg_deleter.h"
 #include "./queue.h"
 
 class Demuxer
 {
 private:
-    using ptr_packet_t     = std::unique_ptr<AVPacket, void (*)(AVPacket*)>;
-    using ptr_format_ctx_t = std::unique_ptr<AVFormatContext, void (*)(AVFormatContext*)>;
+    using ptr_packet_t     = std::unique_ptr<AVPacket, av_packet_deleter>;
+    using ptr_format_ctx_t = std::unique_ptr<AVFormatContext, av_codec_format_ctx_deleter>;
 
-    // AVFormatContext* fmtCtx = nullptr;
-    // TODO:    simplify deleter
-    ptr_format_ctx_t m_p_format_ctx {nullptr,
-                                     [](AVFormatContext* p)
-                                     {
-                                         if (p != nullptr)
-                                         {
-                                             avformat_close_input(&p);
-                                         }
-                                     }};
-
-    TSDeque<ptr_packet_t>& m_video_queue;
-    TSDeque<ptr_packet_t>& m_audio_queue;
-    std::jthread           m_thread;
-    int                    m_video_stream_index = -1;
-    int                    m_audio_stream_index = -1;
-    bool                   m_ready              = false;
+    ptr_format_ctx_t        m_p_format_ctx {nullptr};
+    SPCQueue<ptr_packet_t>& m_video_queue;
+    SPCQueue<ptr_packet_t>& m_audio_queue;
+    std::jthread            m_thread;
+    int                     m_video_stream_index = -1;
+    int                     m_audio_stream_index = -1;
+    bool                    m_ready              = false;
 
 public:
-    explicit Demuxer(TSDeque<ptr_packet_t>& vq, TSDeque<ptr_packet_t>& aq, const char* path)
+    explicit Demuxer(SPCQueue<ptr_packet_t>& vq, SPCQueue<ptr_packet_t>& aq, const char* path)
         : m_video_queue(vq), m_audio_queue(aq)
     {
         m_p_format_ctx = open_input(path);
@@ -149,38 +140,17 @@ private:
         const int        ret = avformat_open_input(&raw, pt, nullptr, nullptr);
         if (ret < 0)
         {
-            return {nullptr,
-                    [](AVFormatContext* p)
-                    {
-                        if (p != nullptr)
-                        {
-                            avformat_close_input(&p);
-                        }
-                    }};
+            return {nullptr};
         }
 
-        return {raw,
-                [](AVFormatContext* p)
-                {
-                    if (p != nullptr)
-                    {
-                        avformat_close_input(&p);
-                    }
-                }};
+        return ptr_format_ctx_t {raw};
     }
 
     void task(const std::stop_token& st)
     {
         while (st.stop_requested() == false)
         {
-            ptr_packet_t ptr_pkt(av_packet_alloc(),
-                                 [](AVPacket* p)
-                                 {
-                                     if (p != nullptr)
-                                     {
-                                         av_packet_free(&p);
-                                     }
-                                 });
+            ptr_packet_t ptr_pkt(av_packet_alloc());
 
             if (ptr_pkt == nullptr)
             {
