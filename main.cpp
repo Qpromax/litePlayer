@@ -13,7 +13,7 @@ extern "C"
 #include "src/engine/decoder.h"
 #include "src/engine/demuxer.h"
 #include "src/engine/queue.h"
-// #include "src/logic/executor.h"
+#include "src/logic/executor.h"
 #include "src/renderer/video.h"
 #include "src/utils/ffmpeg_deleter.h"
 
@@ -43,9 +43,9 @@ int main(int argc, char* argv[])
 
     std::print("{}\n", media_path);
 
-    SPCQueue<ptr_packet_t> video_packet_queue;
-    SPCQueue<ptr_packet_t> audio_packet_queue;
-    SPCQueue<ptr_frame_t>  video_frame_queue;
+    QueueAtomic<ptr_packet_t> video_packet_queue;
+    QueueAtomic<ptr_packet_t> audio_packet_queue;
+    QueueAtomic<ptr_frame_t>  video_frame_queue;
 
     Demuxer demux(video_packet_queue, audio_packet_queue, media_path);
 

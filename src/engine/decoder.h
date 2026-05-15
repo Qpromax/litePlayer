@@ -12,11 +12,6 @@ extern "C"
 #include "../utils/ffmpeg_deleter.h"
 #include "./queue.h"
 
-namespace
-{
-
-}
-
 class Decoder
 {
 private:
@@ -25,14 +20,14 @@ private:
     using ptr_frame_t     = std::unique_ptr<AVFrame, av_frame_deleter>;
     using ptr_codec_ctx_t = std::unique_ptr<AVCodecContext, av_codec_context_deleter>;
 
-    ptr_codec_ctx_t         m_ptr_codec_ctx {nullptr};
-    SPCQueue<ptr_packet_t>& m_packet_queue;
-    SPCQueue<ptr_frame_t>&  m_frame_queue;
-    std::jthread            m_thread;
-    bool                    m_ready = false;
+    ptr_codec_ctx_t            m_ptr_codec_ctx {nullptr};
+    QueueAtomic<ptr_packet_t>& m_packet_queue;
+    QueueAtomic<ptr_frame_t>&  m_frame_queue;
+    std::jthread               m_thread;
+    bool                       m_ready = false;
 
 public:
-    explicit Decoder(SPCQueue<ptr_packet_t>& pq, SPCQueue<ptr_frame_t>& fq, const AVCodecParameters* codecpar)
+    explicit Decoder(QueueAtomic<ptr_packet_t>& pq, QueueAtomic<ptr_frame_t>& fq, const AVCodecParameters* codecpar)
         : m_packet_queue(pq), m_frame_queue(fq)
     {
         if (codecpar == nullptr)

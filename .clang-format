@@ -104,8 +104,8 @@ BraceWrapping:
 # Line Breaking（换行策略）
 # =============================================================================
 
-ColumnLimit: 120
-# 最大行宽 120
+ColumnLimit: 100
+# 最大行宽 100
 
 BreakBeforeBinaryOperators: All
 # 二元运算符换行时非赋值运算符优先前置

@@ -5,10 +5,11 @@ extern "C"
 #include "libavcodec/packet.h"
 #include "libavformat/avformat.h"
 }
+#include <exec/static_thread_pool.hpp>
+#include <stdexec/execution.hpp>
 
 #include <memory>
 #include <print>
-#include <thread>
 
 #include "../utils/ffmpeg_deleter.h"
 #include "./queue.h"
@@ -19,28 +20,26 @@ private:
     using ptr_packet_t     = std::unique_ptr<AVPacket, av_packet_deleter>;
     using ptr_format_ctx_t = std::unique_ptr<AVFormatContext, av_codec_format_ctx_deleter>;
 
-    ptr_format_ctx_t        m_p_format_ctx {nullptr};
-    SPCQueue<ptr_packet_t>& m_video_queue;
-    SPCQueue<ptr_packet_t>& m_audio_queue;
-    std::jthread            m_thread;
-    int                     m_video_stream_index = -1;
-    int                     m_audio_stream_index = -1;
-    bool                    m_ready              = false;
+    ptr_format_ctx_t           m_p_format_ctx {nullptr};
+    QueueAtomic<ptr_packet_t>& m_video_queue;
+    QueueAtomic<ptr_packet_t>& m_audio_queue;
+    int                        m_video_stream_index = -1;
+    int                        m_audio_stream_index = -1;
 
 public:
-    explicit Demuxer(SPCQueue<ptr_packet_t>& vq, SPCQueue<ptr_packet_t>& aq, const char* path)
+    explicit Demuxer(QueueAtomic<ptr_packet_t>& vq, QueueAtomic<ptr_packet_t>& aq, const char* path)
         : m_video_queue(vq), m_audio_queue(aq)
     {
         m_p_format_ctx = open_input(path);
         if (m_p_format_ctx == nullptr)
         {
-            std::print(stderr, "Demux could not open input\n");
+            std::print(stderr, "[Demux] could not open input\n");
             return;
         }
 
         if (avformat_find_stream_info(m_p_format_ctx.get(), nullptr) < 0)
         {
-            std::print(stderr, "Demux could not find stream info\n");
+            std::print(stderr, "[Demux] could not find stream info\n");
             return;
         }
 
@@ -49,11 +48,9 @@ public:
 
         if (m_video_stream_index < 0)
         {
-            std::print(stderr, "Demux could not find video stream\n");
+            std::print(stderr, "[Demux] could not find video stream\n");
             return;
         }
-
-        m_ready = true;
     }
 
     Demuxer(const Demuxer&)             = delete;
@@ -62,23 +59,27 @@ public:
     Demuxer operator=(Demuxer&&)        = delete;
     auto    operator<=>(const Demuxer&) = delete;
 
-    ~Demuxer()
+    ~Demuxer() = default;
+
+    auto schedule_run(stdexec::scheduler auto sched)
     {
-        stop();
-        // avformat_close_input(&fmtCtx);
+        return stdexec::schedule(sched)
+             | stdexec::let_value(
+                   [this]()
+                   {
+                       return stdexec::get_stop_token();
+                   })
+             | stdexec::then(
+                   [this](auto stop_token)
+                   {
+                       this->task(stop_token);
+                   });
     }
 
-    [[nodiscard]] bool ready() const
-    {
-        return m_ready;
-    }
+    // info
 
     [[nodiscard]] const AVCodecParameters* video_codecpar() const
     {
-        if (!m_ready || !m_p_format_ctx || m_video_stream_index < 0)
-        {
-            return nullptr;
-        }
         return m_p_format_ctx->streams[m_video_stream_index]->codecpar;
     }
 
@@ -101,38 +102,6 @@ public:
         return m_p_format_ctx->streams[m_video_stream_index]->time_base;
     }
 
-    void run()
-    {
-        if (m_ready == false || m_p_format_ctx == nullptr || m_video_stream_index < 0)
-        {
-            m_video_queue.close();
-            m_audio_queue.close();
-            std::print(stderr, "Decode not ready, run() skipped, queue closed\n");
-            return;
-        }
-        if (m_thread.joinable())
-        {
-            std::print(stderr, "Demux already running, run() skipped\n");
-            return;
-        }
-        m_thread = std::jthread(
-            [this](const std::stop_token& st)
-            {
-                task(st);
-            });
-    }
-
-    void stop()
-    {
-        if (m_thread.joinable())
-        {
-            m_video_queue.close();
-            m_audio_queue.close();
-            m_thread.request_stop();
-            m_thread.join();
-        }
-    }
-
 private:
     [[nodiscard]] static ptr_format_ctx_t open_input(const char* pt)
     {
@@ -146,9 +115,9 @@ private:
         return ptr_format_ctx_t {raw};
     }
 
-    void task(const std::stop_token& st)
+    void task(auto stop_token)
     {
-        while (st.stop_requested() == false)
+        while (!stop_token.stop_requested())
         {
             ptr_packet_t ptr_pkt(av_packet_alloc());
 

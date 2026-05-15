@@ -35,3 +35,17 @@ target("litePlayer")
     elseif is_plat("linux") then
         add_syslinks("pthread", "dl", "GL", "X11")
     end
+    
+
+    
+-- option("queue_test")
+--     set_default(false)
+--     set_showmenu(true)
+--     set_description("Control whether to compile test units for each header file")
+    
+-- target("queue")
+--     set_kind("binary")
+--     add_options("queue_test")
+--     if has_config("queue_test") then
+--         add_files("tests/EXCEPT.cpp")
+--     end
